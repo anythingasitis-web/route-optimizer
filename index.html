@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>おつかいルート</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+/* レイアウト: 左に操作パネル、右に地図。スマホでは地図が上、パネルが下 */
+:root{
+  --bg:#F2F4F3; --surface:#FFFFFF; --ink:#1E2A2F; --muted:#5F6E74; --line:#DAE1E0;
+  --soft:#E9EEED; --accent:#C8285E; --accent-ink:#FFFFFF; --accent-soft:#FBE7EE;
+  --warn:#8A5200; --warn-bg:#FFF3DC; --shadow:rgba(20,30,35,.18);
+  --tile-filter:none; --osm:#1F6A4A; --osm-bg:#E2F2EA; --bad:#B42318;
+  --font:system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121618; --surface:#1B2124; --ink:#E6ECEB; --muted:#9AA8AC; --line:#2F383C;
+  --soft:#242C30; --accent:#FF5A8C; --accent-ink:#22070F; --accent-soft:#3A1724;
+  --warn:#F2B866; --warn-bg:#2E2414; --shadow:rgba(0,0,0,.5);
+  --tile-filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); --osm:#7FD4A8; --osm-bg:#163126; --bad:#FF8A7A;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#121618; --surface:#1B2124; --ink:#E6ECEB; --muted:#9AA8AC; --line:#2F383C;
+  --soft:#242C30; --accent:#FF5A8C; --accent-ink:#22070F; --accent-soft:#3A1724;
+  --warn:#F2B866; --warn-bg:#2E2414; --shadow:rgba(0,0,0,.5);
+  --tile-filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); --osm:#7FD4A8; --osm-bg:#163126; --bad:#FF8A7A;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{display:grid;grid-template-columns:400px minmax(0,1fr);height:100%}
+.panel{overflow-y:auto;background:var(--surface);border-right:1px solid var(--line);
+  padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:22px}
+.mapwrap{position:relative;min-width:0;overflow:hidden}
+#map{position:absolute;inset:0;background:var(--soft)}
+.leaflet-tile-pane{filter:var(--tile-filter)}
+
+header h1{margin:0;font-size:20px;letter-spacing:.02em;text-wrap:balance}
+header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+
+.sec{display:flex;flex-direction:column;gap:10px}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.sec-h h2{margin:0;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.count b{color:var(--ink)}
+
+/* 家 */
+.home-card{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px}
+.home-ico{flex:none;width:34px;height:34px;border-radius:8px;background:var(--ink);color:var(--surface);display:grid;place-items:center}
+.home-txt{min-width:0;flex:1}
+.home-txt b{display:block}
+.home-txt span{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-card.empty .home-ico{background:var(--soft);color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font-size:13px;line-height:1.3}
+.btn:hover{background:var(--soft)}
+a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.big{width:100%;padding:13px;font-size:15px;border-radius:10px}
+.btn.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+
+/* 検索 */
+.search{position:relative}
+.search input{width:100%;padding:11px 12px 11px 36px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:15px}
+.search input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.hint{margin:0;color:var(--muted);font-size:12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:3px 10px;font-size:12px}
+.chip small{color:var(--muted);margin-left:4px}
+.chip:hover{border-color:var(--ink)}
+.results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.results:empty{display:none}
+.res{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-top:1px solid var(--line)}
+.res:first-child{border-top:0}
+.res.hl{background:var(--soft)}
+.res-main{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0}
+.res-name{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-sub{display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-act{display:flex;gap:4px;flex:none}
+.src{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:0 5px;border-radius:4px;margin-right:6px;vertical-align:1px;background:var(--soft);color:var(--muted);border:1px solid var(--line)}
+.src-osm{background:var(--osm-bg);color:var(--osm);border-color:transparent}
+.src-addr{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.btn.deep{align-self:flex-start;border-style:dashed}
+.res-act .btn{padding:5px 9px;font-size:12px}
+
+/* 行き先 */
+.stops{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.stop{display:flex;flex-direction:column;gap:8px;padding:8px 8px 10px 10px;border:1px solid var(--line);border-radius:10px}
+.stop-top{display:flex;align-items:center;gap:10px}
+.stop-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-left:34px;font-size:12px;color:var(--muted)}
+.stop-opts .lbl{font-weight:700}
+.stop-opts .lbl2{margin-left:6px}
+.stop-opts input{padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font-size:13px;font-variant-numeric:tabular-nums;min-width:0}
+.stop-opts input[type=number]{width:58px}
+.stop-note{margin:0;padding-left:34px;font-size:11px;color:var(--muted)}
+.stop .no{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center;font-size:12px;font-weight:700}
+.stop .txt{flex:1;min-width:0}
+.stop .txt b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stop .txt span{display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x{flex:none;width:30px;height:30px;border:0;background:none;border-radius:6px;color:var(--muted);font-size:18px;line-height:1}
+.x:hover{background:var(--soft);color:var(--ink)}
+.empty-box{border:1px dashed var(--line);border-radius:10px;padding:14px;color:var(--muted);font-size:13px}
+
+/* 条件 */
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--bg)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{text-align:center;padding:7px 0;border-radius:7px;cursor:pointer;font-size:13px}
+.seg input:checked+label{background:var(--surface);box-shadow:0 1px 3px var(--shadow);font-weight:700}
+.seg input:focus-visible+label{outline:2px solid var(--accent)}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.field input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:14px;font-variant-numeric:tabular-nums;min-width:0}
+
+.msg{margin:0;font-size:13px;padding:8px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn)}
+.msg:empty{display:none}
+
+/* 結果 */
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sum div{background:var(--surface);padding:10px 12px}
+.sum .k{display:block;font-size:11px;color:var(--muted);letter-spacing:.06em}
+.sum b{font-size:18px;font-variant-numeric:tabular-nums}
+.notes{display:flex;flex-direction:column;gap:6px}
+.notes:empty{display:none}
+.note{margin:0;font-size:13px;font-weight:600}
+.note.good{color:var(--accent)}
+.note.bad{color:var(--bad)}
+.note.info{color:var(--muted);font-weight:400}
+.tl .late{display:block;color:var(--bad);font-weight:700;font-size:12px}
+.tl li.is-late .m i{background:var(--bad);color:var(--surface)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:52px 28px minmax(0,1fr);column-gap:10px;align-items:start}
+.tl .t{font-variant-numeric:tabular-nums;font-weight:700;text-align:right;padding-top:3px;font-size:13px}
+.tl .m{display:flex;justify-content:center;padding-top:2px}
+.tl .m i{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700}
+.tl .m i.h{border-radius:6px;background:var(--ink);color:var(--surface)}
+.tl .n{padding:2px 0 0;min-width:0}
+.tl .n b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl .n span{display:block;font-size:12px;color:var(--muted)}
+.tl li.leg .m{position:relative;min-height:34px}
+.tl li.leg .m::before{content:"";position:absolute;top:0;bottom:0;left:50%;border-left:2px dotted var(--accent)}
+.tl li.leg .n{padding:7px 0;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ad-slot{display:flex;flex-direction:column;gap:6px;margin-top:auto}
+.ad-label{font-size:10px;letter-spacing:.1em;color:var(--muted)}
+.ad-body{min-height:0}
+.ad-placeholder{margin:0;min-height:100px;display:grid;place-items:center;text-align:center;padding:12px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px;background:var(--bg)}
+.about{border-top:1px solid var(--line);padding-top:12px;font-size:12px;color:var(--muted)}
+.about summary{cursor:pointer;font-weight:700;color:var(--ink);font-size:13px}
+.about ul{margin:8px 0 0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;line-height:1.7}
+.foot{color:var(--muted);font-size:11px;line-height:1.7}
+.foot a{color:inherit}
+
+/* 地図上の部品 */
+.pin{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:700 13px/1 var(--font);
+  background:var(--surface);color:var(--ink);border:2px solid var(--ink);box-shadow:0 1px 4px var(--shadow)}
+.pin.done{background:var(--accent);color:var(--accent-ink);border-color:var(--surface)}
+.pin.home{border-radius:8px;background:var(--ink);color:var(--surface);border-color:var(--surface)}
+.pickbar{position:absolute;z-index:500;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--surface);border-radius:999px;padding:6px 6px 6px 16px;display:flex;align-items:center;gap:10px;
+  box-shadow:0 2px 10px var(--shadow);font-size:13px;max-width:calc(100% - 24px)}
+.pickbar button{border:0;border-radius:999px;padding:5px 12px;background:var(--surface);color:var(--ink);font-size:12px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--surface);color:var(--ink);box-shadow:0 3px 14px var(--shadow)}
+.leaflet-popup-content{margin:12px 14px;font:13px/1.5 var(--font)}
+.leaflet-container a.leaflet-popup-close-button{color:var(--muted)}
+.pop b{display:block;font-size:14px}
+.pop span{display:block;color:var(--muted);font-size:12px;margin-bottom:8px}
+.pop .row{gap:6px}
+.pop .btn{padding:5px 10px;font-size:12px}
+.leaflet-control-attribution{background:var(--surface)!important;color:var(--muted)!important;font:10px/1.5 var(--font)!important}
+.leaflet-control-attribution a{color:var(--ink)!important}
+.leaflet-bar a{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.leaflet-bar a:hover{background:var(--soft)}
+
+@media (max-width:800px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:46% minmax(0,1fr)}
+  .mapwrap{order:-1}
+  .panel{border-right:0;border-top:1px solid var(--line);padding-inline:16px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <header>
+      <h1>おつかいルート</h1>
+      <p>今日行く場所を選ぶと、家から全部回って帰る最短の順番を出します。</p>
+    </header>
+
+    <section class="sec" aria-labelledby="h-home">
+      <div class="sec-h"><h2 id="h-home">出発・帰宅する家</h2></div>
+      <div id="homeCard" class="home-card empty">
+        <div class="home-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg></div>
+        <div class="home-txt"><b id="homeName">まだ決まっていません</b><span id="homeSub">地図で選ぶか、現在地を使ってください</span></div>
+      </div>
+      <div class="row">
+        <button id="pickHome" class="btn" type="button">地図で家を選ぶ</button>
+        <button id="geoHome" class="btn" type="button">現在地を家にする</button>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="h-search">
+      <div class="sec-h"><h2 id="h-search">行き先を探す</h2></div>
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input id="q" type="search" placeholder="店名・業種・住所（例: スーパー、代々木公園）" autocomplete="off" aria-label="行き先を検索">
+      </div>
+      <div id="vocab" class="chips"></div>
+      <p id="searchNote" class="hint">入力すると、地図に表示している範囲の店舗・施設から探します。見つからないときは Enter キーで OpenStreetMap と住所データも探します。</p>
+      <ul id="results" class="results"></ul>
+      <button id="deep" class="btn deep" type="button" hidden>見つからないときは：OpenStreetMap と住所データでも探す</button>
+      <p class="hint">どこにも無い場所は、地図をクリックすればそのまま追加できます。</p>
+    </section>
+
+    <section class="sec" aria-labelledby="h-stops">
+      <div class="sec-h"><h2 id="h-stops">今日の行き先</h2><span class="count"><b id="cnt">0</b> / 10</span></div>
+      <ul id="stops" class="stops"></ul>
+      <p class="hint">営業時間を入れた所は、閉店までに用事が終わるように順番を決めます。空欄なら時間の指定なしです。</p>
+    </section>
+
+    <section class="sec" aria-labelledby="h-opt">
+      <div class="sec-h"><h2 id="h-opt">移動の条件</h2></div>
+      <div class="opts">
+        <div class="seg" role="radiogroup" aria-label="移動手段">
+          <input type="radio" name="mode" id="m-car" value="car" checked><label for="m-car">車</label>
+          <input type="radio" name="mode" id="m-bike" value="bike"><label for="m-bike">自転車</label>
+          <input type="radio" name="mode" id="m-foot" value="foot"><label for="m-foot">徒歩</label>
+        </div>
+        <label class="field" for="depart">出発時刻<input id="depart" type="time"></label>
+        <label class="field" for="stay">滞在（標準・分）<input id="stay" type="number" min="0" max="240" step="5" value="15" inputmode="numeric"></label>
+      </div>
+      <button id="calc" class="btn primary big" type="button">最適ルートを計算</button>
+      <p id="calcMsg" class="msg" role="status"></p>
+    </section>
+
+    <section id="resultSec" class="sec" aria-labelledby="h-res" hidden>
+      <div class="sec-h"><h2 id="h-res">回る順番</h2><span id="modeLabel" class="count"></span></div>
+      <div id="sum" class="sum"></div>
+      <div id="notes" class="notes"></div>
+      <ol id="timeline" class="tl"></ol>
+      <div class="row">
+        <span id="gmaps" class="row"></span>
+        <button id="clearRoute" class="btn" type="button">ルートを消す</button>
+      </div>
+      <p class="hint">時間は道路データからの目安で、信号待ちや渋滞は含みません。</p>
+    </section>
+
+    <aside id="adSlot" class="ad-slot" aria-label="広告">
+      <span class="ad-label">広告</span>
+      <div class="ad-body">
+        <!-- ▼ 広告サービスから渡されたコードを、この2行の間に貼り付けてください ▼ -->
+        <!-- ▲ ここまで ▲ -->
+      </div>
+      <p class="ad-placeholder">広告枠（ここに広告コードを貼ると表示されます。公開ページでは、コードが無ければこの枠は出ません）</p>
+    </aside>
+
+    <details class="about">
+      <summary>使い方と注意</summary>
+      <ul>
+        <li>行き先は最大10ヶ所です。回る順番は、すべての回り方を比べたのと同じ結果になる方法（動的計画法）で選びます。10ヶ所の回り方は約363万通りありますが、計算は一瞬で終わります。</li>
+        <li>営業時間を入れた所は、閉店までに用事が終わるように順番を決めます。早く着いたら開店まで待つものとして計算します。祝日や臨時休業は、お店の情報で確かめてください。</li>
+        <li>所要時間は道路データからの目安です。渋滞・信号待ち・駐車場を探す時間は入っていません。</li>
+        <li>施設は公開データから探しているため、載っていない場所や閉店したお店が出ることがあります。見つからない場所は、地図をクリックすれば追加できます。</li>
+        <li>Googleマップのナビは、一度に渡せる経由地の数に上限があります（スマホのブラウザは3ヶ所、それ以外は9ヶ所）。超えるときはナビのリンクを分けて表示します。</li>
+        <li>地図・検索・経路は、無料で公開されているサービスを使っています。混み合っていると遅くなったり、つながらないことがあります。</li>
+        <li>家と行き先は、この端末のブラウザの中にだけ保存されます。検索した言葉と地点の位置は、検索や経路計算のために各サービスへ送られます。</li>
+      </ul>
+    </details>
+
+    <p class="foot">
+      施設データ: <a href="https://openpoiapi.com/attribution.html" target="_blank" rel="noopener">OpenPOI API</a>
+      地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
+      検索: <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon（komoot）</a>・<a href="https://msearch.gsi.go.jp/" target="_blank" rel="noopener">国土地理院 住所検索</a>　
+      経路: <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">FOSSGIS OSRM</a>・<a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a>（© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>）　<a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">地図の誤りを報告</a>
+    </p>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" aria-label="地図"></div>
+    <div id="pickbar" class="pickbar" hidden><span>地図をクリックして家の場所を選んでください</span><button id="pickCancel" type="button">やめる</button></div>
+  </main>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- 設定 ---------- */
+const API = "https://api.openpoiapi.com";
+const MAX_STOPS = 10;
+const MODES = {
+  car:  { label:"車",     bases:["https://routing.openstreetmap.de/routed-car", "https://router.project-osrm.org"], gm:"driving",   kmh:22 },
+  bike: { label:"自転車", bases:["https://routing.openstreetmap.de/routed-bike"], gm:"bicycling", kmh:12 },
+  foot: { label:"徒歩",   bases:["https://routing.openstreetmap.de/routed-foot"], gm:"walking",   kmh:4.5 },
+};
+
+/* ---------- 保存（このブラウザだけ） ---------- */
+const today = new Date().toLocaleDateString("sv-SE");
+const KEY_HOME = "otsukai.home", KEY_STOPS = "otsukai.stops." + today, KEY_MODE = "otsukai.mode", KEY_STAY = "otsukai.stay";
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+};
+
+const state = {
+  home: store.get(KEY_HOME),
+  stops: Array.isArray(store.get(KEY_STOPS)) ? store.get(KEY_STOPS).slice(0, MAX_STOPS) : [],
+  mode: MODES[store.get(KEY_MODE)] ? store.get(KEY_MODE) : "car",
+  results: [],
+  picking: false,
+  route: null,
+};
+
+/* ---------- 小道具 ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const keyOf = p => `${p.name}@${(+p.lat).toFixed(5)},${(+p.lng).toFixed(5)}`;
+function haversine(a, b){
+  const R = 6371000, r = Math.PI/180;
+  const dLat = (b.lat-a.lat)*r, dLng = (b.lng-a.lng)*r;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const fmtDist = m => m < 1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(m < 10000 ? 1 : 0)} km`;
+function fmtDur(sec){
+  const min = Math.max(1, Math.round(sec/60));
+  if (min < 60) return `${min}分`;
+  return `${Math.floor(min/60)}時間${min%60 ? (min%60)+"分" : ""}`;
+}
+async function fetchJSON(url, ms = 12000){
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+function normPoi(p, src){
+  const lat = +p.lat, lng = +p.lng;
+  if (p.lat === "" || p.lng === "" || !isFinite(lat) || !isFinite(lng)) return null;
+  const addr = p.address || [p.prefecture, p.city].filter(Boolean).join("");
+  return { name: p.name || "名前のない施設", address: addr, lat, lng, src: src || "poi" };
+}
+
+/* ---------- 地図 ---------- */
+const start = state.home ? [state.home.lat, state.home.lng] : [35.681236, 139.767052];
+const map = L.map("map", { zoomControl:false }).setView(start, 15);
+L.control.zoom({ position:"bottomright" }).addTo(map);
+L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", {
+  minZoom:5, maxZoom:18,
+  attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'
+}).addTo(map);
+map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+map.attributionControl.addAttribution('<a href="https://openpoiapi.com/attribution.html" target="_blank" rel="noopener">OpenPOI API</a>');
+map.attributionControl.addAttribution('経路 <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">FOSSGIS OSRM</a> / © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM</a> <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">誤りを報告</a>');
+
+const resultLayer = L.layerGroup().addTo(map);
+const routeLayer  = L.layerGroup().addTo(map);
+const pinLayer    = L.layerGroup().addTo(map);
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const HOUSE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg>';
+const icon = (html, cls) => L.divIcon({ className:"", html:`<div class="pin ${cls}">${html}</div>`, iconSize:[28,28], iconAnchor:[14,14], popupAnchor:[0,-14] });
+
+/* ---------- ポップアップ（ボタン付き） ---------- */
+function popupEl(title, sub, actions){
+  const el = document.createElement("div"); el.className = "pop";
+  const b = document.createElement("b"); b.textContent = title; el.appendChild(b);
+  const s = document.createElement("span"); s.textContent = sub || ""; el.appendChild(s);
+  const row = document.createElement("div"); row.className = "row"; el.appendChild(row);
+  for (const a of actions){
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "btn" + (a.primary ? " primary" : ""); btn.textContent = a.label;
+    btn.disabled = !!a.disabled;
+    btn.addEventListener("click", () => { map.closePopup(); a.run(); });
+    row.appendChild(btn);
+  }
+  return el;
+}
+function poiActions(p){
+  const added = state.stops.some(s => keyOf(s) === keyOf(p));
+  return [
+    { label: added ? "追加済み" : "行き先に追加", primary:true, disabled: added || state.stops.length >= MAX_STOPS, run: () => addStop(p) },
+    { label:"家にする", run: () => setHome(p) },
+  ];
+}
+
+/* ---------- 家 ---------- */
+function setHome(p){
+  state.home = { name:"家", sub: p.name && p.name !== "選んだ地点" ? `${p.name}${p.address ? "・"+p.address : ""}` : (p.address || `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`), lat:p.lat, lng:p.lng };
+  store.set(KEY_HOME, state.home);
+  setPicking(false);
+  invalidate(); renderHome(); renderPins(); renderResults();
+}
+function renderHome(){
+  const h = state.home, card = $("homeCard");
+  card.classList.toggle("empty", !h);
+  $("homeName").textContent = h ? "家" : "まだ決まっていません";
+  $("homeSub").textContent = h ? h.sub : "地図で選ぶか、現在地を使ってください";
+  $("pickHome").textContent = h ? "地図で選び直す" : "地図で家を選ぶ";
+}
+function setPicking(on){
+  state.picking = on;
+  $("pickbar").hidden = !on;
+  $("pickHome").classList.toggle("on", on);
+  map.getContainer().style.cursor = on ? "crosshair" : "";
+}
+$("pickHome").addEventListener("click", () => setPicking(!state.picking));
+$("pickCancel").addEventListener("click", () => setPicking(false));
+$("geoHome").addEventListener("click", () => {
+  if (!navigator.geolocation){ showMsg("このブラウザでは現在地を取得できません。地図で家を選んでください。"); return; }
+  $("geoHome").disabled = true; $("geoHome").textContent = "取得中…";
+  navigator.geolocation.getCurrentPosition(pos => {
+    $("geoHome").disabled = false; $("geoHome").textContent = "現在地を家にする";
+    const p = { name:"現在地", address:"", lat:pos.coords.latitude, lng:pos.coords.longitude };
+    setHome(p); map.setView([p.lat, p.lng], 15);
+  }, err => {
+    $("geoHome").disabled = false; $("geoHome").textContent = "現在地を家にする";
+    showMsg(err.code === 1 ? "現在地の利用が許可されていません。ブラウザの設定で許可するか、地図で家を選んでください。" : "現在地を取得できませんでした。地図で家を選んでください。");
+  }, { enableHighAccuracy:true, timeout:10000 });
+});
+
+/* ---------- 行き先 ---------- */
+function addStop(p){
+  if (state.stops.length >= MAX_STOPS){ showMsg(`行き先は${MAX_STOPS}ヶ所までです。どれかを外してから追加してください。`); return; }
+  if (state.stops.some(s => keyOf(s) === keyOf(p))) return;
+  const s = { name:p.name, address:p.address || "", lat:p.lat, lng:p.lng, src:p.src || "", open:"", close:"", stay:null, hoursNote:"" };
+  state.stops.push(s);
+  saveStops(); invalidate(); renderStops(); renderPins(); renderResults();
+}
+function removeStop(i){
+  state.stops.splice(i, 1);
+  saveStops(); invalidate(); renderStops(); renderPins(); renderResults();
+}
+const saveStops = () => store.set(KEY_STOPS, state.stops);
+function renderStops(){
+  $("cnt").textContent = state.stops.length;
+  const ul = $("stops");
+  if (!state.stops.length){
+    ul.innerHTML = `<li class="empty-box">まだありません。上で検索するか、地図をクリックして追加してください（最大${MAX_STOPS}ヶ所）。</li>`;
+    return;
+  }
+  ul.innerHTML = state.stops.map((s, i) => `
+    <li class="stop">
+      <div class="stop-top">
+        <span class="no">${i+1}</span>
+        <span class="txt"><b>${esc(s.name)}</b><span>${esc(s.address || (s.src === "addr" ? "住所から追加" : "地図で選んだ地点"))}</span></span>
+        <button class="x" type="button" data-rm="${i}" aria-label="${esc(s.name)}を外す">×</button>
+      </div>
+      <div class="stop-opts">
+        <span class="lbl">営業</span>
+        <input type="time" id="open-${i}" data-i="${i}" data-f="open" value="${esc(s.open || "")}" aria-label="${esc(s.name)}の開店時刻">
+        <span>〜</span>
+        <input type="time" id="close-${i}" data-i="${i}" data-f="close" value="${esc(s.close || "")}" aria-label="${esc(s.name)}の閉店時刻">
+        <span class="lbl lbl2">滞在</span>
+        <input type="number" id="stay-${i}" data-i="${i}" data-f="stay" min="0" max="240" step="5" inputmode="numeric" value="${Number.isFinite(s.stay) ? s.stay : ""}" placeholder="${stayMin()}" aria-label="${esc(s.name)}の滞在時間（分）"><span>分</span>
+      </div>
+      ${s.hoursNote ? `<p class="stop-note">${esc(s.hoursNote)}</p>` : ""}
+    </li>`).join("");
+}
+$("stops").addEventListener("click", e => {
+  const b = e.target.closest("[data-rm]"); if (b) removeStop(+b.dataset.rm);
+});
+$("stops").addEventListener("change", e => {
+  const el = e.target.closest("[data-f]"); if (!el) return;
+  const s = state.stops[+el.dataset.i]; if (!s) return;
+  if (el.dataset.f === "stay"){
+    const v = parseInt(el.value, 10);
+    s.stay = Number.isFinite(v) ? Math.max(0, Math.min(240, v)) : null;
+  } else {
+    s[el.dataset.f] = el.value || "";
+  }
+  saveStops(); recalcSoon();
+});
+
+/* ---------- 地図上のピン ---------- */
+function renderPins(){
+  pinLayer.clearLayers();
+  const order = state.route ? state.route.order : null; // 行き先index → 訪問順
+  state.stops.forEach((s, i) => {
+    const visit = order ? order.indexOf(i) + 1 : 0;
+    const m = L.marker([s.lat, s.lng], { icon: icon(visit || i+1, visit ? "done" : ""), zIndexOffset: 500 });
+    m.bindPopup(() => popupEl(s.name, s.address, [{ label:"行き先から外す", run: () => removeStop(state.stops.indexOf(s)) }]));
+    pinLayer.addLayer(m);
+  });
+  if (state.home){
+    const m = L.marker([state.home.lat, state.home.lng], { icon: icon(HOUSE, "home"), zIndexOffset: 1000 });
+    m.bindPopup(() => popupEl("家", state.home.sub, []));
+    pinLayer.addLayer(m);
+  }
+}
+
+/* ---------- 地図クリック ---------- */
+let clickSeq = 0;
+map.on("click", async e => {
+  const { lat, lng } = e.latlng;
+  if (state.picking){
+    const near = await nearestPoi(lat, lng);
+    setHome({ name: near ? near.name : "選んだ地点", address: near ? near.address : "", lat, lng });
+    return;
+  }
+  const seq = ++clickSeq;
+  const base = { name:"選んだ地点", address:"", lat, lng };
+  const popup = L.popup().setLatLng(e.latlng).setContent(popupEl("この地点", "近くの施設を調べています…", poiActions(base))).openOn(map);
+  const near = await nearestPoi(lat, lng);
+  if (seq !== clickSeq || !map.hasLayer(popup)) return;
+  const p = near ? { ...near, lat, lng } : base;
+  popup.setContent(popupEl(near ? near.name : "この地点", near ? (near.address || "この近くの施設") : "近くに登録された施設はありません", poiActions(p)));
+});
+async function nearestPoi(lat, lng){
+  try {
+    const d = await fetchJSON(`${API}/v1/search?center=${lng.toFixed(6)},${lat.toFixed(6)}&radius=40&limit=1`, 6000);
+    return d.results && d.results[0] ? normPoi(d.results[0], "poi") : null;
+  } catch(e){ return null; }
+}
+
+/* ---------- 検索 ----------
+   入力中      : OpenPOI（店舗・施設）＋ 住所らしい入力なら国土地理院の住所検索
+   Enter/ボタン: さらに OpenStreetMap（Photon）と国土地理院の住所・地名検索 */
+let searchSeq = 0, searchTimer = 0;
+const SRC = { poi:"施設", osm:"OSM", addr:"住所" };
+const refPoint = () => state.home || (c => ({ lat:c.lat, lng:c.lng }))(map.getCenter());
+const okPt = p => p && isFinite(p.lat) && isFinite(p.lng);
+const byDist = ref => (a, b) => haversine(ref, a) - haversine(ref, b);
+const normName = s => String(s || "").normalize("NFKC").toLowerCase().replace(/[\s・　]/g, "");
+const looksLikeAddress = q => /[0-9０-９]|丁目|番地|[都道府県].*[市区町村]|[市区町村].+[町丁]/.test(q);
+function viewBox(){
+  const b = map.getBounds(), cl = (v, a) => Math.max(-a, Math.min(a, v)).toFixed(5);
+  return [cl(b.getWest(),180), cl(b.getSouth(),90), cl(b.getEast(),180), cl(b.getNorth(),90)].join(",");
+}
+$("q").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => runSearch($("q").value.trim(), false), 300);
+});
+$("q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing){ e.preventDefault(); clearTimeout(searchTimer); runSearch($("q").value.trim(), true); }
+});
+$("deep").addEventListener("click", () => { clearTimeout(searchTimer); runSearch($("q").value.trim(), true); });
+
+async function poiSuggest(q){
+  const c = map.getCenter();
+  const params = new URLSearchParams({ q, bbox: viewBox(), center:`${c.lng.toFixed(5)},${c.lat.toFixed(5)}`, limit:"15", fields:"minimal" });
+  const d = await fetchJSON(`${API}/v1/suggest?${params}`);
+  return { items:(d.suggestions || []).map(p => normPoi(p, "poi")).filter(Boolean), vocab:d.vocabulary || [], scope:d.scope };
+}
+async function gsiSearch(q, ref){
+  const d = await fetchJSON(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`, 8000);
+  return (Array.isArray(d) ? d : []).map(f => ({
+    name: f.properties && f.properties.title, address:"", lat:+f.geometry.coordinates[1], lng:+f.geometry.coordinates[0], src:"addr"
+  })).filter(p => okPt(p) && p.name).sort(byDist(ref)).slice(0, 5);
+}
+async function osmSearch(q, ref){ // OpenStreetMap のデータを Photon（komoot）で検索。Enter／ボタンを押したときだけ呼ぶ
+  const p = new URLSearchParams({ q, lat:ref.lat.toFixed(5), lon:ref.lng.toFixed(5), limit:"10" });
+  const d = await fetchJSON(`https://photon.komoot.io/api/?${p}`, 10000);
+  return (d.features || []).filter(f => !f.properties.countrycode || f.properties.countrycode === "JP").map(f => {
+    const pr = f.properties;
+    return { name: pr.name || [pr.street, pr.housenumber].filter(Boolean).join(" "),
+      address: [pr.state, pr.city, pr.district, pr.locality, pr.street, pr.housenumber].filter(Boolean).join(""),
+      lat:+f.geometry.coordinates[1], lng:+f.geometry.coordinates[0], src:"osm" };
+  }).filter(p => okPt(p) && p.name);
+}
+
+async function runSearch(q, deep){
+  const seq = ++searchSeq;
+  if (!q){ state.results = []; state.deepFor = ""; renderResults(); $("vocab").innerHTML = ""; setNote(); updateDeep(); return; }
+  const ref = refPoint();
+  setNote(deep ? "施設・OpenStreetMap・住所のデータから探しています…" : "検索中…");
+  const jobs = { poi: poiSuggest(q) };
+  if (deep || looksLikeAddress(q)) jobs.addr = gsiSearch(q, ref);
+  if (deep) jobs.osm = osmSearch(q, ref);
+  const keys = Object.keys(jobs);
+  const out = await Promise.allSettled(keys.map(k => jobs[k]));
+  if (seq !== searchSeq) return;
+
+  const got = {}, failed = [];
+  keys.forEach((k, i) => { if (out[i].status === "fulfilled") got[k] = out[i].value; else failed.push(k); });
+  const merged = [];
+  const push = list => list.forEach(p => {
+    if (!merged.some(m => normName(m.name) === normName(p.name) && haversine(m, p) < 150)) merged.push(p);
+  });
+  if (got.poi) push(got.poi.items);
+  if (got.osm) push(got.osm);
+  if (got.addr) push(got.addr);
+  state.results = merged.slice(0, 30);
+  state.deepFor = deep ? q : "";
+  renderVocab(got.poi ? got.poi.vocab : []);
+  renderResults(true);
+  updateDeep();
+
+  const counts = ["poi", "osm", "addr"].filter(k => got[k]).map(k => {
+    const n = state.results.filter(p => p.src === k).length; return n ? `${SRC[k]} ${n}件` : "";
+  }).filter(Boolean).join("・");
+  const failNote = failed.length ? `（${failed.map(k => SRC[k]).join("・")}のデータにはつながりませんでした）` : "";
+  if (!state.results.length){
+    setNote(deep ? `どのデータでも見つかりませんでした${failNote}。地図をクリックすれば、その場所を直接追加できます。`
+                 : `施設データでは見つかりませんでした${failNote}。Enter キーか下のボタンで、OpenStreetMap と住所データも探せます。`);
+  } else if (!deep && got.poi && got.poi.scope === "nationwide"){
+    setNote(`表示中の範囲に無かったので、全国から探しました（${counts}）。近くにあるはずなら、Enter キーで OpenStreetMap も探してください。`);
+  } else {
+    setNote(`${counts}${failNote}`);
+  }
+}
+function updateDeep(){
+  const q = $("q").value.trim();
+  $("deep").hidden = !q || state.deepFor === q;
+}
+
+async function nearbySearch(query, label){
+  const seq = ++searchSeq;
+  const r = refPoint();
+  setNote(`「${label}」を近い順に探しています…`);
+  try {
+    const d = await fetchJSON(`${API}/v1/search?${new URLSearchParams({ q:query, center:`${r.lng.toFixed(5)},${r.lat.toFixed(5)}`, radius:"5000", limit:"30" })}`);
+    if (seq !== searchSeq) return;
+    const seen = new Set();
+    state.results = (d.results || []).map(p => normPoi(p, "poi")).filter(p => p && !seen.has(keyOf(p)) && seen.add(keyOf(p))).slice(0, 20);
+    renderResults(true);
+    setNote(state.results.length ? `「${label}」を${state.home ? "家" : "地図の中心"}から近い順に表示しています（半径5km）。` : `近く（半径5km）に「${label}」は見つかりませんでした。`);
+  } catch(e){
+    if (seq === searchSeq) setNote("施設検索につながりませんでした。もう一度試してください。");
+  }
+}
+function renderVocab(list){
+  const typeName = { category:"業種", brand:"チェーン", place:"地名" };
+  $("vocab").innerHTML = list.slice(0, 5).map((v, i) =>
+    `<button class="chip" type="button" data-v="${i}">${esc(v.label)}<small>${typeName[v.type] || ""}${v.type === "place" ? "へ移動" : "を近い順"}</small></button>`).join("");
+  $("vocab").onclick = e => {
+    const b = e.target.closest("[data-v]"); if (!b) return;
+    const v = list[+b.dataset.v];
+    if (v.type === "place" && Array.isArray(v.bbox) && v.bbox.length === 4){
+      map.fitBounds([[v.bbox[1], v.bbox[0]], [v.bbox[3], v.bbox[2]]], { maxZoom:15 });
+      setNote(`${v.label}へ移動しました。続けて店名や業種で探せます。`);
+      $("q").value = ""; $("q").focus(); $("vocab").innerHTML = ""; state.results = []; renderResults(); updateDeep();
+    } else {
+      nearbySearch(v.query || v.label, v.label);
+    }
+  };
+}
+function setNote(t){ $("searchNote").textContent = t || "入力すると、地図に表示している範囲の店舗・施設から探します。見つからないときは Enter キーで OpenStreetMap と住所データも探します。"; }
+function renderResults(fit){
+  const ul = $("results"), ref = refPoint();
+  const full = state.stops.length >= MAX_STOPS;
+  ul.innerHTML = state.results.map((p, i) => {
+    const added = state.stops.some(s => keyOf(s) === keyOf(p));
+    const sub = [fmtDist(haversine(ref, p)), p.address].filter(Boolean).join("・");
+    return `<li class="res" data-i="${i}">
+      <button class="res-main" type="button" data-go="${i}"><span class="res-name">${esc(p.name)}</span><span class="res-sub"><span class="src src-${p.src || "poi"}">${SRC[p.src] || SRC.poi}</span>${esc(sub)}</span></button>
+      <span class="res-act">
+        <button class="btn primary" type="button" data-add="${i}" ${added || full ? "disabled" : ""}>${added ? "追加済" : "追加"}</button>
+        <button class="btn" type="button" data-home="${i}" title="ここを家にする">家</button>
+      </span></li>`;
+  }).join("");
+  resultLayer.clearLayers();
+  const color = cssVar("--accent"), fill = cssVar("--surface");
+  state.results.forEach((p, i) => {
+    const m = L.circleMarker([p.lat, p.lng], { radius:6, color, weight:2, fillColor:fill, fillOpacity:1, bubblingMouseEvents:false });
+    m.bindPopup(() => popupEl(p.name, p.address, poiActions(p)));
+    m.on("mouseover", () => hl(i, true)); m.on("mouseout", () => hl(i, false));
+    resultLayer.addLayer(m);
+  });
+  if (fit && state.results.length){
+    const near = state.results.filter(p => haversine(ref, p) < 30000); // 遠すぎる候補で地図が引きすぎないように
+    const b = L.latLngBounds((near.length ? near : state.results).map(p => [p.lat, p.lng]));
+    if (!map.getBounds().contains(b)) map.fitBounds(b, { padding:[30,30], maxZoom:16 });
+  }
+}
+function hl(i, on){ const li = $("results").querySelector(`[data-i="${i}"]`); if (li) li.classList.toggle("hl", on); }
+$("results").addEventListener("click", e => {
+  const t = e.target.closest("button"); if (!t) return;
+  if (t.dataset.add !== undefined) addStop(state.results[+t.dataset.add]);
+  else if (t.dataset.home !== undefined) setHome(state.results[+t.dataset.home]);
+  else if (t.dataset.go !== undefined){
+    const p = state.results[+t.dataset.go];
+    map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
+    L.popup().setLatLng([p.lat, p.lng]).setContent(popupEl(p.name, p.address, poiActions(p))).openOn(map);
+  }
+});
+
+/* ---------- 条件 ---------- */
+document.querySelectorAll('input[name="mode"]').forEach(r => {
+  r.checked = r.value === state.mode;
+  r.addEventListener("change", () => { state.mode = r.value; store.set(KEY_MODE, state.mode); invalidate(); });
+});
+(() => {
+  const n = new Date(); const m = Math.ceil((n.getHours()*60 + n.getMinutes()) / 5) * 5;
+  $("depart").value = `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const st = store.get(KEY_STAY); if (Number.isFinite(st)) $("stay").value = st;
+})();
+$("depart").addEventListener("change", recalcSoon);
+$("stay").addEventListener("change", () => {
+  store.set(KEY_STAY, stayMin());
+  document.querySelectorAll('[data-f="stay"]').forEach(el => { el.placeholder = stayMin(); });
+  recalcSoon();
+});
+const stayMin = () => Math.max(0, Math.min(240, parseInt($("stay").value, 10) || 0));
+function departMin(){
+  const [h, m] = ($("depart").value || "").split(":").map(Number);
+  if (Number.isFinite(h) && Number.isFinite(m)) return h*60 + m;
+  const n = new Date(); return n.getHours()*60 + n.getMinutes();
+}
+function showMsg(t){ $("calcMsg").textContent = t || ""; }
+let recalcTimer = 0;
+function recalcSoon(){ // 結果が出ているときだけ、条件の変更に合わせて自動で計算し直す
+  if (!state.route) return;
+  clearTimeout(recalcTimer);
+  recalcTimer = setTimeout(() => calculate(true), 500);
+}
+
+/* ---------- 営業時間と時刻 ---------- */
+const toMin = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(v || ""); return m ? (+m[1])*60 + (+m[2]) : null; };
+const stayOf = s => (Number.isFinite(s.stay) ? s.stay : stayMin()) * 60;
+function windowOf(s){ // 0時からの秒。閉店が開店より前なら深夜営業として翌日扱い
+  const o = toMin(s.open), c = toMin(s.close);
+  if (o == null && c == null) return null;
+  const open = (o ?? 0) * 60;
+  let close = c == null ? Infinity : c * 60;
+  if (o != null && c != null && c <= o) close += 86400;
+  return { open, close };
+}
+function clockSec(sec){
+  const day = Math.floor(sec / 86400), m = Math.floor(((sec % 86400) + 86400) % 86400 / 60);
+  return (day > 0 ? "翌" : "") + `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+}
+const fmtWindow = s => `${s.open || "—"}〜${s.close || "—"}`;
+
+/* 決まった順番で回ったときの時刻を出す。早く着いたら開店まで待ち、閉店までに用事が終わらなければ「遅れ」 */
+function simulate(stops, legDur, startSec){
+  let t = startSec, travel = 0, wait = 0, lateCount = 0, late = 0;
+  const visits = stops.map((s, k) => {
+    t += legDur[k]; travel += legDur[k];
+    const arrive = t, w = windowOf(s);
+    let waited = 0;
+    if (w && t < w.open){ waited = w.open - t; t = w.open; wait += waited; }
+    const leave = t + stayOf(s);
+    const over = w && leave > w.close ? leave - w.close : 0;
+    if (over > 0){ lateCount++; late += over; }
+    t = leave;
+    return { arrive, waited, leave, over, w };
+  });
+  t += legDur[stops.length]; travel += legDur[stops.length];
+  return { back:t, travel, wait, lateCount, late, visits };
+}
+// 良さの比べ方: ①営業時間に間に合わない所が少ない ②遅れが短い ③家に早く着く ④移動時間が短い
+function better(a, b){
+  if (a.lateCount !== b.lateCount) return a.lateCount < b.lateCount;
+  if (Math.abs(a.late - b.late) > 1) return a.late < b.late;
+  if (Math.abs(a.back - b.back) > 1) return a.back < b.back;
+  return a.travel < b.travel;
+}
+
+/* ---------- 経路計算 ---------- */
+const coordStr = pts => pts.map(p => `${(+p.lng).toFixed(6)},${(+p.lat).toFixed(6)}`).join(";");
+let lastRouterCall = 0;
+async function router(kind, query){ // 公開サーバーの決まりで、問い合わせは1秒に1回まで
+  let err;
+  for (const base of MODES[state.mode].bases){
+    try {
+      const wait = 1000 - (Date.now() - lastRouterCall);
+      if (wait > 0) await new Promise(r => setTimeout(r, wait));
+      lastRouterCall = Date.now();
+      const d = await fetchJSON(`${base}/${kind}/v1/driving/${query}`, 15000);
+      if (d.code !== "Ok") throw new Error(d.code || "経路エラー");
+      return d;
+    } catch(e){ err = e; }
+  }
+  throw err;
+}
+function estimate(a, b){ // 経路サーバーが使えないときの概算（直線×1.3）
+  const dist = haversine(a, b) * 1.3;
+  return { dist, dur: dist / (MODES[state.mode].kmh * 1000 / 3600) };
+}
+// 道路網上の最短経路で、家と各行き先のすべての組の所要時間・距離を出す（一方通行があるので A→B と B→A は別）
+async function buildMatrix(pts){
+  const n = pts.length, dur = [], dist = [];
+  let approx = false;
+  try {
+    const d = await router("table", `${coordStr(pts)}?annotations=duration,distance`);
+    for (let i = 0; i < n; i++){
+      dur[i] = []; dist[i] = [];
+      for (let j = 0; j < n; j++){
+        const du = d.durations?.[i]?.[j], di = d.distances?.[i]?.[j];
+        if (du == null){ const e = estimate(pts[i], pts[j]); dur[i][j] = e.dur; dist[i][j] = e.dist; }
+        else { dur[i][j] = du; dist[i][j] = di ?? estimate(pts[i], pts[j]).dist; }
+      }
+    }
+  } catch(e){
+    approx = true;
+    for (let i = 0; i < n; i++){ dur[i] = []; dist[i] = []; for (let j = 0; j < n; j++){ const x = estimate(pts[i], pts[j]); dur[i][j] = x.dur; dist[i][j] = x.dist; } }
+  }
+  return { dur, dist, approx };
+}
+const legsOf = (dur, perm) => { const seq = [0, ...perm, 0]; return seq.slice(1).map((j, k) => dur[seq[k]][j]); };
+/* 時間枠付き巡回セールスマン問題を、動的計画法（Held-Karp 法を営業時間に合わせて広げたもの）で厳密に解く。
+   状態 =（回り終えた行き先の集合, 最後にいる行き先）。状態ごとに「間に合わない数・遅れ・時刻・移動時間」の
+   どれでも他に負けている候補を捨て、残った候補（パレート最適な候補）だけを持つ。
+   早く着いても開店まで待てばよいので、早い候補を捨てることは無い → 最適解を取りこぼさない。
+   営業時間の指定が無ければ候補は状態ごとに1つになり、普通の Held-Karp 法（n²·2ⁿ）と同じになる。 */
+function bestOrder(dur, startSec){
+  const stops = state.stops, n = stops.length, FULL = (1 << n) - 1;
+  const table = new Map();
+  const beats = (b, a) => b.lc <= a.lc && b.late <= a.late + 1e-6 && b.t <= a.t + 1e-6 && b.tr <= a.tr + 1e-6;
+  function add(key, lab){
+    const list = table.get(key);
+    if (!list){ table.set(key, [lab]); return; }
+    if (list.some(b => beats(b, lab))) return;
+    const kept = list.filter(b => !beats(lab, b));
+    kept.push(lab); table.set(key, kept);
+  }
+  function step(lab, from, k){ // from: 0 = 家, 1..n = 行き先
+    const s = stops[k], d = dur[from][k + 1], w = windowOf(s);
+    let t = lab.t + d;
+    if (w && t < w.open) t = w.open;
+    const leave = t + stayOf(s);
+    const over = w && leave > w.close ? leave - w.close : 0;
+    return { lc: lab.lc + (over > 0 ? 1 : 0), late: lab.late + over, t: leave, tr: lab.tr + d, k, prev: lab };
+  }
+  const root = { lc:0, late:0, t:startSec, tr:0, k:-1, prev:null };
+  for (let k = 0; k < n; k++) add((1 << k) * n + k, step(root, 0, k));
+  for (let mask = 1; mask <= FULL; mask++){
+    for (let last = 0; last < n; last++){
+      const list = table.get(mask * n + last); if (!list) continue;
+      for (let k = 0; k < n; k++){
+        if (mask & (1 << k)) continue;
+        const key = (mask | (1 << k)) * n + k;
+        for (const lab of list) add(key, step(lab, last + 1, k));
+      }
+    }
+  }
+  let best = null;
+  for (let last = 0; last < n; last++){
+    for (const lab of table.get(FULL * n + last) || []){
+      const d = dur[last + 1][0];
+      const fin = { lateCount: lab.lc, late: lab.late, back: lab.t + d, travel: lab.tr + d, lab };
+      if (!best || better(fin, best)) best = fin;
+    }
+  }
+  const perm = [];
+  for (let l = best.lab; l && l.k >= 0; l = l.prev) perm.unshift(l.k + 1);
+  return { perm, sim: simulate(perm.map(k => stops[k - 1]), legsOf(dur, perm), startSec) };
+}
+
+let matrixCache = { key:"", M:null }, routeCache = { key:"", legs:null, line:null }, calcSeq = 0;
+$("calc").addEventListener("click", () => calculate(false));
+async function calculate(auto){
+  if (!auto) showMsg("");
+  if (!state.home){ showMsg("先に家の場所を決めてください。"); return; }
+  if (!state.stops.length){ showMsg("行き先を1ヶ所以上追加してください。"); return; }
+  const seq = ++calcSeq, mode = state.mode;
+  const btn = $("calc"); btn.disabled = true; btn.textContent = "計算中…";
+  try {
+    const pts = [state.home, ...state.stops];
+    const mkey = mode + "|" + coordStr(pts);
+    const M = matrixCache.key === mkey ? matrixCache.M : await buildMatrix(pts);
+    if (!M.approx) matrixCache = { key:mkey, M };
+    if (seq !== calcSeq || mode !== state.mode) return;
+
+    const startSec = departMin() * 60;
+    const best = bestOrder(M.dur, startSec);
+    const picked = simulate(state.stops, legsOf(M.dur, state.stops.map((_, i) => i + 1)), startSec);
+    const order = [0, ...best.perm, 0];
+    const rkey = mode + "|" + coordStr(order.map(i => pts[i]));
+    let legs = null, line = null;
+    if (!M.approx){
+      if (routeCache.key === rkey){ legs = routeCache.legs; line = routeCache.line; }
+      else {
+        try {
+          const d = await router("route", `${coordStr(order.map(i => pts[i]))}?overview=full&geometries=geojson&steps=false`);
+          const r = d.routes[0];
+          legs = r.legs.map(l => ({ dur:l.duration, dist:l.distance }));
+          line = r.geometry.coordinates.map(([x, y]) => [y, x]);
+          routeCache = { key:rkey, legs, line };
+        } catch(e){ /* 下で表から作る */ }
+      }
+    }
+    if (seq !== calcSeq || mode !== state.mode) return;
+    if (!legs) legs = order.slice(1).map((j, k) => ({ dur:M.dur[order[k]][j], dist:M.dist[order[k]][j] }));
+    state.route = { order: best.perm.map(k => k - 1), legs, line, approx:M.approx, mode, best:best.sim, picked };
+    renderRoute(!auto); renderPins();
+    showMsg(M.approx ? "経路サーバーにつながらなかったため、直線距離からの概算で順番を決めました（地図の線は直線です）。" : "");
+  } catch(e){
+    if (seq === calcSeq) showMsg("ルートを計算できませんでした。ネットワークを確認して、もう一度押してください。");
+  } finally {
+    if (seq === calcSeq){ btn.disabled = false; btn.textContent = "最適ルートを計算"; }
+  }
+}
+
+function invalidate(){
+  calcSeq++; clearTimeout(recalcTimer);
+  const btn = $("calc"); btn.disabled = false; btn.textContent = "最適ルートを計算";
+  if (!state.route) return;
+  state.route = null; routeLayer.clearLayers(); $("resultSec").hidden = true; showMsg("");
+  renderPins();
+}
+$("clearRoute").addEventListener("click", () => invalidate());
+
+function renderRoute(moveView){
+  const R = state.route; if (!R) return;
+  const stops = R.order.map(i => state.stops[i]);
+  const sim = simulate(stops, R.legs.map(l => l.dur), departMin() * 60);
+  const distM = R.legs.reduce((a, l) => a + l.dist, 0);
+
+  $("modeLabel").textContent = MODES[R.mode].label + (R.approx ? "・概算" : "");
+  $("sum").innerHTML = `
+    <div><span class="k">移動時間</span><b>${fmtDur(sim.travel)}</b></div>
+    <div><span class="k">距離</span><b>${fmtDist(distM)}</b></div>
+    <div><span class="k">帰宅</span><b>${clockSec(sim.back)}</b></div>`;
+
+  const notes = [];
+  if (sim.lateCount) notes.push(["bad", `どの順番でも、営業時間内に用事を済ませられない所が${sim.lateCount}ヶ所あります（赤字）。出発を早めるか、行き先を減らしてください。`]);
+  else if (stops.length >= 2 && R.picked.lateCount) notes.push(["good", "追加した順だと閉店に間に合わない所がありますが、この順番なら全部間に合います。"]);
+  else if (stops.length >= 2 && R.picked.back - R.best.back >= 60) notes.push(["good", `追加した順に回るより ${fmtDur(R.picked.back - R.best.back)} 早く家に着きます。`]);
+  if (sim.wait >= 60) notes.push(["info", `開店待ちが合計 ${fmtDur(sim.wait)} あります。`]);
+  $("notes").innerHTML = notes.map(([c, t]) => `<p class="note ${c}">${esc(t)}</p>`).join("");
+
+  let html = `<li><span class="t">${clockSec(departMin() * 60)}</span><span class="m"><i class="h">${HOUSE}</i></span><span class="n"><b>家を出発</b></span></li>`;
+  R.legs.forEach((leg, k) => {
+    html += `<li class="leg"><span class="t"></span><span class="m"></span><span class="n">${fmtDur(leg.dur)}・${fmtDist(leg.dist)}</span></li>`;
+    if (k < stops.length){
+      const s = stops[k], v = sim.visits[k], stay = Math.round(stayOf(s) / 60);
+      const sub = [];
+      if (v.w) sub.push(`営業 ${fmtWindow(s)}`);
+      if (v.waited >= 60) sub.push(`開店まで${fmtDur(v.waited)}待ち`);
+      sub.push(stay ? `${stay}分いて ${clockSec(v.leave)} に出る` : "立ち寄るだけ");
+      const late = v.over > 0 ? `<span class="late">${v.leave - stayOf(s) >= v.w.close ? "着いた時には閉店しています" : `閉店に${fmtDur(v.over)}間に合いません`}</span>` : "";
+      html += `<li class="${v.over > 0 ? "is-late" : ""}"><span class="t">${clockSec(v.arrive)}</span><span class="m"><i>${k+1}</i></span><span class="n"><b>${esc(s.name)}</b><span>${esc(sub.join("・"))}</span>${late}</span></li>`;
+    } else {
+      html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">${HOUSE}</i></span><span class="n"><b>家に到着</b></span></li>`;
+    }
+  });
+  $("timeline").innerHTML = html;
+
+  // Google マップに渡せる経由地はスマホのブラウザで3つ、それ以外で9つまで。超える分はリンクを分ける
+  const ll = p => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
+  const seqPts = [state.home, ...stops, state.home];
+  const maxWp = matchMedia("(pointer:coarse)").matches ? 3 : 9;
+  const name = i => (i === 0 || i === seqPts.length - 1) ? "家" : `${i}`;
+  const links = [];
+  for (let a = 0; a < seqPts.length - 1; ){
+    const b = Math.min(a + maxWp + 1, seqPts.length - 1);
+    const g = new URLSearchParams({ api:"1", origin: ll(seqPts[a]), destination: ll(seqPts[b]), travelmode: MODES[R.mode].gm });
+    const wp = seqPts.slice(a + 1, b);
+    if (wp.length) g.set("waypoints", wp.map(ll).join("|"));
+    links.push({ href:"https://www.google.com/maps/dir/?" + g.toString(), a, b });
+    a = b;
+  }
+  $("gmaps").innerHTML = links.map((l, i) => `<a class="btn" href="${esc(l.href)}" target="_blank" rel="noopener">${links.length === 1 ? "Googleマップでナビ" : `ナビ ${i+1}/${links.length}（${name(l.a)}→${name(l.b)}）`}</a>`).join("");
+
+  $("resultSec").hidden = false;
+
+  routeLayer.clearLayers();
+  const accent = cssVar("--accent"), casing = cssVar("--surface");
+  const path = R.line || [state.home, ...stops, state.home].map(p => [p.lat, p.lng]);
+  L.polyline(path, { color:casing, weight:9, opacity:.9, interactive:false }).addTo(routeLayer);
+  L.polyline(path, { color:accent, weight:5, opacity:.95, dashArray: R.line ? null : "8 8", interactive:false }).addTo(routeLayer);
+  if (!moveView) return;
+  map.fitBounds(L.latLngBounds(path), { padding:[40,40] });
+  if (matchMedia("(max-width:800px)").matches) { const pn = document.querySelector(".panel"); pn.scrollTo({ top: pn.scrollTop + $("resultSec").getBoundingClientRect().top - pn.getBoundingClientRect().top - 12, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" }); }
+}
+
+/* ---------- 広告枠 ----------
+   広告コードが貼られていればそのまま表示。無いときは、手元で開いたファイルでだけ置き場所の目印を出し、公開ページでは枠ごと隠す */
+(() => {
+  const slot = $("adSlot"), hasAd = slot.querySelector(".ad-body").children.length > 0;
+  slot.querySelector(".ad-placeholder").hidden = hasAd || location.protocol !== "file:";
+  slot.hidden = !hasAd && location.protocol !== "file:";
+})();
+
+/* ---------- 起動 ---------- */
+renderHome(); renderStops(); renderPins();
+if (state.stops.length){
+  const pts = [...state.stops, ...(state.home ? [state.home] : [])].map(p => [p.lat, p.lng]);
+  map.fitBounds(pts, { padding:[50,50], maxZoom:16 });
+}
+})();
+</script>
+</body>
+</html>
