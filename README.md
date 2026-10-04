@@ -22,3 +22,16 @@
 - 住所・地名検索: 国土地理院
 - OpenStreetMap の検索: [Photon（komoot）](https://photon.komoot.io/)
 - 経路: [FOSSGIS OSRM](https://routing.openstreetmap.de/about.html)、[OSRM](https://project-osrm.org/)（© [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)）
+
+## 詳細条件版
+
+[advanced/](advanced/) は、細かい条件を付けて計算できる版です。シンプル版と行き来でき、移るときは家と行き先を引き継ぎます。
+
+- 「最初に行く」「最後に行く」の指定
+- 前後の条件（A を B より先に）
+- 「必ず行く」と「行けたら」の区別（「行けたら」は時間や条件に合わなければ回らない）
+- 帰宅（終了）の締め切り
+- 終わり方：家に戻る／最後の場所まで／指定した終点
+
+条件はどれも「回った場所の集合」だけで判定できるため、シンプル版と同じ動的計画法のまま、厳密な最適解を求めています。
+

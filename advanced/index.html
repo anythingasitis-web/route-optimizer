@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>巡回ルート最適化</title>
-<meta name="description" content="行きたい場所を全て選択してボタンを押すと、最短道順を表示します。">
+<title>巡回ルート最適化 詳細条件版</title>
+<meta name="description" content="順番の指定、前後の条件、締め切り、終点などの細かい条件を付けて、いちばん良い回り方を計算します。">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <style>
@@ -164,6 +164,22 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 .foot{color:var(--muted);font-size:11px;line-height:1.7}
 .switch{display:inline-block;margin-top:8px;font-size:12px;color:var(--accent);text-decoration:none;font-weight:600}
 .switch:hover{text-decoration:underline}
+.badge{display:inline-block;vertical-align:3px;margin-left:4px;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.chk{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:var(--ink);cursor:pointer}
+.chk input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.stop-opts select,.prec-add select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font-size:13px;color:var(--ink);min-width:0;max-width:100%}
+.prec-add{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px}
+.prec-add select{flex:1 1 120px}
+.prec-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.prec-list li{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 10px;border:1px solid var(--line);border-radius:10px;font-size:13px}
+.prec-list .pr{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.prec-list .arrow{color:var(--accent);font-weight:700}
+.endbox{grid-column:1/-1;display:flex;flex-direction:column;gap:8px}
+.end-ico{font-size:13px;font-weight:700}
+.deadline-hint{grid-column:1/-1}
+.pin.skip{background:var(--surface);color:var(--muted);border:2px dashed var(--muted);box-shadow:none}
+.pin.end{border-radius:8px;background:var(--accent);color:var(--accent-ink);border-color:var(--surface)}
+.tl .m i.h.e{background:var(--accent);color:var(--accent-ink);font-size:11px}
 .share-url{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:12px}
 .foot a{color:inherit}
 
@@ -200,9 +216,9 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 <div class="app">
   <aside class="panel">
     <header>
-      <h1>巡回ルート最適化</h1>
-      <p>行きたい場所を全て選択してボタンを押すと、最短道順を表示します。</p>
-      <a id="toAdvanced" class="switch" href="advanced/">順番の指定や締め切りなど、細かい条件を付けたいとき → 詳細条件版</a>
+      <h1>巡回ルート最適化 <span class="badge">詳細条件版</span></h1>
+      <p>順番の指定・前後の条件・締め切り・終点を付けて、いちばん良い回り方を計算します。</p>
+      <a id="toSimple" class="switch" href="../">← シンプル版に戻る</a>
     </header>
 
     <section class="sec" aria-labelledby="h-home">
@@ -233,7 +249,21 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
     <section class="sec" aria-labelledby="h-stops">
       <div class="sec-h"><h2 id="h-stops">今日の行き先</h2><span class="count"><b id="cnt">0</b> / 10</span></div>
       <ul id="stops" class="stops"></ul>
-      <p class="hint">営業時間を入れた所は、閉店までに用事が終わるように順番を決めます。空欄なら時間の指定なしです。</p>
+      <p class="hint">「必ず行く」を外した所は「行けたら」になり、時間や条件に合わなければ回りません。営業時間を入れた所は、閉店までに用事が終わるように順番を決めます（空欄なら指定なし）。</p>
+    </section>
+
+    <section class="sec" aria-labelledby="h-prec">
+      <div class="sec-h"><h2 id="h-prec">前後の条件</h2></div>
+      <div class="prec-add">
+        <select id="precA" aria-label="先に行く場所"></select>
+        <span>を、</span>
+        <select id="precB" aria-label="後に行く場所"></select>
+        <span>より先に</span>
+        <button id="precAdd" class="btn" type="button">追加</button>
+      </div>
+      <p id="precMsg" class="msg" role="status"></p>
+      <ul id="precList" class="prec-list"></ul>
+      <p class="hint">例：郵便局で荷物を受け取ってから、実家に届ける。後の場所は、先の場所を回ったあとでないと回りません。</p>
     </section>
 
     <section class="sec" aria-labelledby="h-opt">
@@ -244,12 +274,22 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
           <input type="radio" name="mode" id="m-bike" value="bike"><label for="m-bike">自転車</label>
           <input type="radio" name="mode" id="m-foot" value="foot"><label for="m-foot">徒歩</label>
         </div>
-        <div class="seg seg2" role="radiogroup" aria-label="最後に家へ戻るか">
-          <input type="radio" name="end" id="e-home" value="home" checked><label for="e-home">最後に家へ戻る</label>
-          <input type="radio" name="end" id="e-open" value="open"><label for="e-open">戻らない（片道）</label>
+        <div class="seg" role="radiogroup" aria-label="終わり方">
+          <input type="radio" name="end" id="e-home" value="home" checked><label for="e-home">家に戻る</label>
+          <input type="radio" name="end" id="e-open" value="open"><label for="e-open">最後の場所まで</label>
+          <input type="radio" name="end" id="e-point" value="point"><label for="e-point">終点を指定</label>
+        </div>
+        <div id="endBox" class="endbox" hidden>
+          <div id="endCard" class="home-card empty">
+            <div class="home-ico end-ico" aria-hidden="true">終</div>
+            <div class="home-txt"><b id="endName">まだ決まっていません</b><span id="endSub">地図で選ぶか、検索結果の「終点」を押してください</span></div>
+          </div>
+          <div class="row"><button id="pickEnd" class="btn" type="button">地図で終点を選ぶ</button></div>
         </div>
         <label class="field" for="depart">出発時刻<input id="depart" type="time"></label>
         <label class="field" for="stay">滞在（標準・分）<input id="stay" type="number" min="0" max="240" step="5" value="15" inputmode="numeric"></label>
+        <label class="field" for="deadline">締め切り（帰宅・終了）<input id="deadline" type="time"></label>
+        <p class="hint deadline-hint">締め切りを入れると、それまでに終われるように回ります。「行けたら」の場所は、間に合わなければ外します。</p>
       </div>
       <button id="calc" class="btn primary big" type="button">最適ルートを計算</button>
       <p id="calcMsg" class="msg" role="status"></p>
@@ -285,14 +325,15 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
     <details class="about">
       <summary>使い方と注意</summary>
       <ul>
-        <li>行き先は最大10ヶ所です。回る順番は、すべての回り方を比べたのと同じ結果になる方法（動的計画法）で選びます。10ヶ所の回り方は約363万通りありますが、計算は一瞬で終わります。</li>
-        <li>営業時間を入れた所は、閉店までに用事が終わるように順番を決めます。早く着いたら開店まで待つものとして計算します。祝日や臨時休業は、お店の情報で確かめてください。</li>
-        <li>所要時間は道路データからの目安です。渋滞・信号待ち・駐車場を探す時間は入っていません。</li>
-        <li>施設は公開データから探しているため、載っていない場所や閉店したお店が出ることがあります。見つからない場所は、地図をクリックすれば追加できます。</li>
-        <li>Googleマップのナビは、一度に渡せる経由地の数に上限があります（スマホのブラウザは3ヶ所、それ以外は9ヶ所）。超えるときはナビのリンクを分けて表示します。</li>
-        <li>地図・検索・経路は、無料で公開されているサービスを使っています。混み合っていると遅くなったり、つながらないことがあります。</li>
-        <li>「戻らない（片道）」にすると、家から出発して最後の行き先で終わる回り方を出します。どこで終わるのが一番早いかも自動で決めます。</li>
-        <li>「共有リンク」で、行き先・営業時間・順番の条件をリンクにして送れます。リンクには家と行き先の位置が含まれるので、送る相手に気をつけてください。</li>
+        <li>この詳細条件版では、シンプル版の条件（営業時間・滞在時間・移動手段）に加えて、次の条件を付けられます。どれも組み合わせて使えます。</li>
+        <li><b>最初に行く／最後に行く</b>：指定した場所を、ほかの場所より前（後）に回ります。複数あるときは、その中での順番も自動で決めます。</li>
+        <li><b>前後の条件</b>：「A を、B より先に」と決めると、B は A を回ったあとでないと回りません。</li>
+        <li><b>必ず行く／行けたら</b>：「必ず行く」を外した場所は、時間や条件に合わなければ回りません。回れる中で、「行けたら」の場所をできるだけ多く回る順番を選びます。</li>
+        <li><b>締め切り</b>：帰宅（終了）の時刻を決めると、それまでに終われるように回ります。</li>
+        <li><b>終わり方</b>：家に戻る／最後の場所で終わる／指定した終点（職場・駅など）で終わる、から選べます。</li>
+        <li>順番は、条件を満たす回り方すべてを比べたのと同じ結果になる方法（動的計画法）で選びます。比べる順番は、①営業時間や締め切りに間に合わない所が少ない ②遅れが短い ③「行けたら」の場所を多く回る ④早く終わる ⑤移動時間が短い、です。</li>
+        <li>所要時間は道路データからの目安です。渋滞・信号待ち・駐車場を探す時間は入っていません。祝日や臨時休業は、お店の情報で確かめてください。</li>
+        <li>「共有リンク」で、行き先と条件をリンクにして送れます。リンクには家と行き先の位置が含まれるので、送る相手に気をつけてください。</li>
         <li>家と行き先は、この端末のブラウザの中にだけ保存されます。検索した言葉と地点の位置は、検索や経路計算のために各サービスへ送られます。</li>
         <li>このページには広告（忍者AdMax）が表示されます。広告の配信のため、広告事業者がCookieを使うことがあります。</li>
       </ul>
@@ -308,7 +349,7 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 
   <main class="mapwrap">
     <div id="map" aria-label="地図"></div>
-    <div id="pickbar" class="pickbar" hidden><span>地図をクリックして家の場所を選んでください</span><button id="pickCancel" type="button">やめる</button></div>
+    <div id="pickbar" class="pickbar" hidden><span id="pickText">地図をクリックして家の場所を選んでください</span><button id="pickCancel" type="button">やめる</button></div>
   </main>
 </div>
 
@@ -327,7 +368,9 @@ const MODES = {
 
 /* ---------- 保存（このブラウザだけ） ---------- */
 const today = new Date().toLocaleDateString("sv-SE");
-const KEY_HOME = "otsukai.home", KEY_STOPS = "otsukai.stops." + today, KEY_MODE = "otsukai.mode", KEY_STAY = "otsukai.stay", KEY_END = "otsukai.end";
+const KEY_HOME = "otsukai.home", KEY_MODE = "otsukai.mode", KEY_STAY = "otsukai.stay"; // シンプル版と共通
+const KEY_STOPS = "otsukai.adv.stops." + today, KEY_PREC = "otsukai.adv.prec." + today, KEY_DL = "otsukai.adv.deadline." + today,
+      KEY_END = "otsukai.adv.end", KEY_ENDPT = "otsukai.adv.endpoint";
 const store = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
@@ -337,7 +380,9 @@ const state = {
   home: store.get(KEY_HOME),
   stops: Array.isArray(store.get(KEY_STOPS)) ? store.get(KEY_STOPS).slice(0, MAX_STOPS) : [],
   mode: MODES[store.get(KEY_MODE)] ? store.get(KEY_MODE) : "car",
-  endMode: store.get(KEY_END) === "open" ? "open" : "home",
+  endMode: ["home", "open", "point"].includes(store.get(KEY_END)) ? store.get(KEY_END) : "home",
+  endPoint: store.get(KEY_ENDPT),
+  prec: Array.isArray(store.get(KEY_PREC)) ? store.get(KEY_PREC) : [],
   results: [],
   picking: false,
   route: null,
@@ -413,6 +458,7 @@ function poiActions(p){
   return [
     { label: added ? "追加済み" : "行き先に追加", primary:true, disabled: added || state.stops.length >= MAX_STOPS, run: () => addStop(p) },
     { label:"家にする", run: () => setHome(p) },
+    { label:"終点にする", run: () => setEndPoint(p) },
   ];
 }
 
@@ -430,13 +476,15 @@ function renderHome(){
   $("homeSub").textContent = h ? h.sub : "地図で選ぶか、現在地を使ってください";
   $("pickHome").textContent = h ? "地図で選び直す" : "地図で家を選ぶ";
 }
-function setPicking(on){
+function setPicking(on){ // on: "home" | "end" | false
   state.picking = on;
   $("pickbar").hidden = !on;
-  $("pickHome").classList.toggle("on", on);
+  $("pickText").textContent = on === "end" ? "地図をクリックして終点を選んでください" : "地図をクリックして家の場所を選んでください";
+  $("pickHome").classList.toggle("on", on === "home");
+  $("pickEnd").classList.toggle("on", on === "end");
   map.getContainer().style.cursor = on ? "crosshair" : "";
 }
-$("pickHome").addEventListener("click", () => setPicking(!state.picking));
+$("pickHome").addEventListener("click", () => setPicking(state.picking === "home" ? false : "home"));
 $("pickCancel").addEventListener("click", () => setPicking(false));
 $("geoHome").addEventListener("click", () => {
   if (!navigator.geolocation){ showMsg("このブラウザでは現在地を取得できません。地図で家を選んでください。"); return; }
@@ -455,28 +503,37 @@ $("geoHome").addEventListener("click", () => {
 function addStop(p){
   if (state.stops.length >= MAX_STOPS){ showMsg(`行き先は${MAX_STOPS}ヶ所までです。どれかを外してから追加してください。`); return; }
   if (state.stops.some(s => keyOf(s) === keyOf(p))) return;
-  const s = { name:p.name, address:p.address || "", lat:p.lat, lng:p.lng, src:p.src || "", open:"", close:"", stay:null, hoursNote:"" };
-  state.stops.push(s);
+  state.stops.push({ name:p.name, address:p.address || "", lat:p.lat, lng:p.lng, src:p.src || "", open:"", close:"", stay:null, hoursNote:"", req:true, pos:"" });
   saveStops(); invalidate(); renderStops(); renderPins(); renderResults();
 }
 function removeStop(i){
+  const k = keyOf(state.stops[i]);
   state.stops.splice(i, 1);
+  state.prec = state.prec.filter(([a, b]) => a !== k && b !== k); savePrec();
   saveStops(); invalidate(); renderStops(); renderPins(); renderResults();
 }
 const saveStops = () => store.set(KEY_STOPS, state.stops);
+const savePrec = () => store.set(KEY_PREC, state.prec);
 function renderStops(){
   $("cnt").textContent = state.stops.length;
   const ul = $("stops");
   if (!state.stops.length){
     ul.innerHTML = `<li class="empty-box">まだありません。上で検索するか、地図をクリックして追加してください（最大${MAX_STOPS}ヶ所）。</li>`;
-    return;
-  }
-  ul.innerHTML = state.stops.map((s, i) => `
+  } else {
+    ul.innerHTML = state.stops.map((s, i) => `
     <li class="stop">
       <div class="stop-top">
         <span class="no">${i+1}</span>
         <span class="txt"><b>${esc(s.name)}</b><span>${esc(s.address || (s.src === "addr" ? "住所から追加" : "地図で選んだ地点"))}</span></span>
         <button class="x" type="button" data-rm="${i}" aria-label="${esc(s.name)}を外す">×</button>
+      </div>
+      <div class="stop-opts">
+        <label class="chk" for="req-${i}"><input type="checkbox" id="req-${i}" data-i="${i}" data-f="req" ${s.req !== false ? "checked" : ""}>必ず行く</label>
+        <select id="pos-${i}" data-i="${i}" data-f="pos" aria-label="${esc(s.name)}の順番">
+          <option value="" ${!s.pos ? "selected" : ""}>順番の指定なし</option>
+          <option value="first" ${s.pos === "first" ? "selected" : ""}>最初に行く</option>
+          <option value="last" ${s.pos === "last" ? "selected" : ""}>最後に行く</option>
+        </select>
       </div>
       <div class="stop-opts">
         <span class="lbl">営業</span>
@@ -486,8 +543,9 @@ function renderStops(){
         <span class="lbl lbl2">滞在</span>
         <input type="number" id="stay-${i}" data-i="${i}" data-f="stay" min="0" max="240" step="5" inputmode="numeric" value="${Number.isFinite(s.stay) ? s.stay : ""}" placeholder="${stayMin()}" aria-label="${esc(s.name)}の滞在時間（分）"><span>分</span>
       </div>
-      ${s.hoursNote ? `<p class="stop-note">${esc(s.hoursNote)}</p>` : ""}
     </li>`).join("");
+  }
+  renderPrec();
 }
 $("stops").addEventListener("click", e => {
   const b = e.target.closest("[data-rm]"); if (b) removeStop(+b.dataset.rm);
@@ -495,14 +553,65 @@ $("stops").addEventListener("click", e => {
 $("stops").addEventListener("change", e => {
   const el = e.target.closest("[data-f]"); if (!el) return;
   const s = state.stops[+el.dataset.i]; if (!s) return;
-  if (el.dataset.f === "stay"){
-    const v = parseInt(el.value, 10);
-    s.stay = Number.isFinite(v) ? Math.max(0, Math.min(240, v)) : null;
-  } else {
-    s[el.dataset.f] = el.value || "";
-  }
+  const f = el.dataset.f;
+  if (f === "stay"){ const v = parseInt(el.value, 10); s.stay = Number.isFinite(v) ? Math.max(0, Math.min(240, v)) : null; }
+  else if (f === "req") s.req = el.checked;
+  else if (f === "pos") s.pos = el.value;
+  else s[f] = el.value || "";
   saveStops(); recalcSoon();
 });
+
+/* ---------- 前後の条件 ---------- */
+function precMsg(t){ $("precMsg").textContent = t || ""; }
+function renderPrec(){
+  state.prec = state.prec.filter(([a, b]) => state.stops.some(s => keyOf(s) === a) && state.stops.some(s => keyOf(s) === b));
+  const opts = state.stops.map((s, i) => `<option value="${i}">${i+1}. ${esc(s.name)}</option>`).join("");
+  $("precA").innerHTML = opts; $("precB").innerHTML = opts;
+  if (state.stops.length > 1) $("precB").value = "1";
+  const can = state.stops.length >= 2;
+  $("precA").disabled = $("precB").disabled = $("precAdd").disabled = !can;
+  const pairs = precIdx();
+  $("precList").innerHTML = pairs.length
+    ? pairs.map(([a, b], j) => `<li><span class="pr"><b>${esc(state.stops[a].name)}</b><span class="arrow">→</span><b>${esc(state.stops[b].name)}</b></span><button class="x" type="button" data-prm="${j}" aria-label="この条件を消す">×</button></li>`).join("")
+    : `<li class="empty-box">${can ? "まだありません。" : "行き先を2ヶ所以上追加すると使えます。"}</li>`;
+}
+function reaches(from, to, pairs){ // from から矢印をたどって to に着くか
+  const seen = new Set([from]), stack = [from];
+  while (stack.length){ const x = stack.pop(); if (x === to) return true; for (const [a, b] of pairs) if (a === x && !seen.has(b)){ seen.add(b); stack.push(b); } }
+  return false;
+}
+$("precAdd").addEventListener("click", () => {
+  const a = +$("precA").value, b = +$("precB").value;
+  if (a === b){ precMsg("違う場所を2つ選んでください。"); return; }
+  const pairs = precIdx();
+  if (pairs.some(([x, y]) => x === a && y === b)){ precMsg("その条件はもう入っています。"); return; }
+  if (reaches(b, a, pairs)){ precMsg("この条件を足すと、どちらも相手より先に行くことになり、順番が決まりません。"); return; }
+  state.prec.push([keyOf(state.stops[a]), keyOf(state.stops[b])]);
+  precMsg(""); savePrec(); renderPrec(); recalcSoon();
+});
+$("precList").addEventListener("click", e => {
+  const b = e.target.closest("[data-prm]"); if (!b) return;
+  state.prec.splice(+b.dataset.prm, 1); savePrec(); renderPrec(); recalcSoon();
+});
+
+/* ---------- 終点 ---------- */
+function setEndPoint(p){
+  state.endPoint = { name: p.name && p.name !== "選んだ地点" ? p.name : "終点", sub: p.address || `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, lat:p.lat, lng:p.lng };
+  store.set(KEY_ENDPT, state.endPoint);
+  state.endMode = "point"; store.set(KEY_END, "point");
+  document.querySelectorAll('input[name="end"]').forEach(r => { r.checked = r.value === "point"; });
+  setPicking(false); renderEnd(); renderPins(); recalcSoon();
+}
+function renderEnd(){
+  const on = state.endMode === "point", e = state.endPoint;
+  $("endBox").hidden = !on;
+  $("endName").textContent = e ? e.name : "まだ決まっていません";
+  $("endSub").textContent = e ? e.sub : "地図で選ぶか、検索結果の「終点」を押してください";
+  $("endCard").classList.toggle("empty", !e);
+  $("pickEnd").textContent = e ? "地図で選び直す" : "地図で終点を選ぶ";
+  $("h-home").textContent = state.endMode === "home" ? "出発・帰宅する家" : "出発する家";
+}
+$("pickEnd").addEventListener("click", () => setPicking(state.picking === "end" ? false : "end"));
 
 /* ---------- 地図上のピン ---------- */
 function renderPins(){
@@ -510,13 +619,20 @@ function renderPins(){
   const order = state.route ? state.route.order : null; // 行き先index → 訪問順
   state.stops.forEach((s, i) => {
     const visit = order ? order.indexOf(i) + 1 : 0;
-    const m = L.marker([s.lat, s.lng], { icon: icon(visit || i+1, visit ? "done" : ""), zIndexOffset: 500 });
-    m.bindPopup(() => popupEl(s.name, s.address, [{ label:"行き先から外す", run: () => removeStop(state.stops.indexOf(s)) }]));
+    const cls = visit ? "done" : order ? "skip" : "";
+    const m = L.marker([s.lat, s.lng], { icon: icon(visit || i+1, cls), zIndexOffset: 500 });
+    m.bindPopup(() => popupEl(s.name, order && !visit ? "今回は回りません（行けたら）" : s.address, [{ label:"行き先から外す", run: () => removeStop(state.stops.indexOf(s)) }]));
     pinLayer.addLayer(m);
   });
   if (state.home){
     const m = L.marker([state.home.lat, state.home.lng], { icon: icon(HOUSE, "home"), zIndexOffset: 1000 });
     m.bindPopup(() => popupEl("家", state.home.sub, []));
+    pinLayer.addLayer(m);
+  }
+  if (state.endMode === "point" && state.endPoint){
+    const e = state.endPoint;
+    const m = L.marker([e.lat, e.lng], { icon: icon("終", "end"), zIndexOffset: 900 });
+    m.bindPopup(() => popupEl(`終点：${e.name}`, e.sub, []));
     pinLayer.addLayer(m);
   }
 }
@@ -526,8 +642,10 @@ let clickSeq = 0;
 map.on("click", async e => {
   const { lat, lng } = e.latlng;
   if (state.picking){
+    const target = state.picking;
     const near = await nearestPoi(lat, lng);
-    setHome({ name: near ? near.name : "選んだ地点", address: near ? near.address : "", lat, lng });
+    const p = { name: near ? near.name : "選んだ地点", address: near ? near.address : "", lat, lng };
+    if (target === "end") setEndPoint(p); else setHome(p);
     return;
   }
   const seq = ++clickSeq;
@@ -679,6 +797,7 @@ function renderResults(fit){
       <span class="res-act">
         <button class="btn primary" type="button" data-add="${i}" ${added || full ? "disabled" : ""}>${added ? "追加済" : "追加"}</button>
         <button class="btn" type="button" data-home="${i}" title="ここを家にする">家</button>
+        <button class="btn" type="button" data-endpt="${i}" title="ここを終点にする">終</button>
       </span></li>`;
   }).join("");
   resultLayer.clearLayers();
@@ -700,6 +819,7 @@ $("results").addEventListener("click", e => {
   const t = e.target.closest("button"); if (!t) return;
   if (t.dataset.add !== undefined) addStop(state.results[+t.dataset.add]);
   else if (t.dataset.home !== undefined) setHome(state.results[+t.dataset.home]);
+  else if (t.dataset.endpt !== undefined) setEndPoint(state.results[+t.dataset.endpt]);
   else if (t.dataset.go !== undefined){
     const p = state.results[+t.dataset.go];
     map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
@@ -714,15 +834,16 @@ document.querySelectorAll('input[name="mode"]').forEach(r => {
 });
 document.querySelectorAll('input[name="end"]').forEach(r => {
   r.checked = r.value === state.endMode;
-  r.addEventListener("change", () => { state.endMode = r.value; store.set(KEY_END, state.endMode); recalcSoon(); });
+  r.addEventListener("change", () => { state.endMode = r.value; store.set(KEY_END, state.endMode); renderEnd(); renderPins(); recalcSoon(); });
 });
-const roundTrip = () => state.endMode !== "open";
 (() => {
   const n = new Date(); const m = Math.ceil((n.getHours()*60 + n.getMinutes()) / 5) * 5;
   $("depart").value = `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
   const st = store.get(KEY_STAY); if (Number.isFinite(st)) $("stay").value = st;
 })();
+$("deadline").value = isHHMM(store.get(KEY_DL)) ? store.get(KEY_DL) : "";
 $("depart").addEventListener("change", recalcSoon);
+$("deadline").addEventListener("change", () => { store.set(KEY_DL, $("deadline").value); recalcSoon(); });
 $("stay").addEventListener("change", () => {
   store.set(KEY_STAY, stayMin());
   document.querySelectorAll('[data-f="stay"]').forEach(el => { el.placeholder = stayMin(); });
@@ -825,24 +946,53 @@ async function buildMatrix(pts){
   }
   return { dur, dist, approx };
 }
-const legsOf = (dur, perm) => { const seq = [0, ...perm, ...(roundTrip() ? [0] : [])]; return seq.slice(1).map((j, k) => dur[seq[k]][j]); };
-/* 時間枠付き巡回セールスマン問題を、動的計画法（Held-Karp 法を営業時間に合わせて広げたもの）で厳密に解く。
-   状態 =（回り終えた行き先の集合, 最後にいる行き先）。状態ごとに「間に合わない数・遅れ・時刻・移動時間」の
-   どれでも他に負けている候補を捨て、残った候補（パレート最適な候補）だけを持つ。
-   早く着いても開店まで待てばよいので、早い候補を捨てることは無い → 最適解を取りこぼさない。
-   営業時間の指定が無ければ候補は状態ごとに1つになり、普通の Held-Karp 法（n²·2ⁿ）と同じになる。 */
-function bestOrder(dur, startSec){
+/* ---------- 最適化（詳細条件版） ----------
+   時間枠付き巡回セールスマン問題に、次の条件を足して動的計画法で厳密に解く。
+   ・「最初に行く」場所は、ほかの場所より前に回る（何ヶ所あってもよい）
+   ・「最後に行く」場所は、ほかの場所より後に回る
+   ・前後の条件（A → B）：B は A を回ったあとでないと回れない
+   ・「行けたら」の場所は回らなくてもよい。間に合わない場所や締め切りを越える場所は外れる
+   ・終わり方：家に戻る／最後の行き先で終わる／指定した終点で終わる
+   状態 =（回った行き先の集合, 最後にいる行き先）。条件はどれも「回った集合」だけで判定できるので、
+   シンプル版と同じく、状態ごとにパレート最適な候補だけを残せば最適解を取りこぼさない。
+   良さの比べ方: ①間に合わない数（締め切り超えも1つと数える） ②遅れの合計が短い
+                ③「行けたら」の場所を多く回る ④早く終わる ⑤移動時間が短い */
+function deadlineSec(){
+  const d = toMin($("deadline").value); if (d == null) return null;
+  let s = d * 60; if (s <= departMin() * 60) s += 86400; // 出発より前の時刻なら翌日とみなす
+  return s;
+}
+function precIdx(){
+  const idx = new Map(state.stops.map((s, i) => [keyOf(s), i]));
+  return state.prec.map(([a, b]) => [idx.get(a), idx.get(b)]).filter(([a, b]) => a != null && b != null && a !== b);
+}
+function solve(dur, startSec){
   const stops = state.stops, n = stops.length, FULL = (1 << n) - 1;
+  const endNode = state.endMode === "home" ? 0 : state.endMode === "point" ? n + 1 : null;
+  const dl = deadlineSec();
+  let reqMask = 0, firstMask = 0, lastMask = 0;
+  const need = new Array(n).fill(0);
+  stops.forEach((s, k) => {
+    if (s.req !== false) reqMask |= 1 << k;
+    if (s.pos === "first") firstMask |= 1 << k;
+    if (s.pos === "last") lastMask |= 1 << k;
+  });
+  for (const [a, b] of precIdx()) need[b] |= 1 << a;
+  const canVisit = (mask, k) => {
+    if ((need[k] & mask) !== need[k]) return false;                       // 先に行くべき場所をまだ回っていない
+    if ((firstMask >> k & 1) && (mask & ~firstMask)) return false;        // 「最初に」は、ほかの場所より前だけ
+    if (!(lastMask >> k & 1) && (mask & lastMask)) return false;          // 「最後に」のあとに、ほかの場所は回れない
+    return true;
+  };
   const table = new Map();
   const beats = (b, a) => b.lc <= a.lc && b.late <= a.late + 1e-6 && b.t <= a.t + 1e-6 && b.tr <= a.tr + 1e-6;
   function add(key, lab){
     const list = table.get(key);
     if (!list){ table.set(key, [lab]); return; }
     if (list.some(b => beats(b, lab))) return;
-    const kept = list.filter(b => !beats(lab, b));
-    kept.push(lab); table.set(key, kept);
+    const kept = list.filter(b => !beats(lab, b)); kept.push(lab); table.set(key, kept);
   }
-  function step(lab, from, k){ // from: 0 = 家, 1..n = 行き先
+  function step(lab, from, k){
     const s = stops[k], d = dur[from][k + 1], w = windowOf(s);
     let t = lab.t + d;
     if (w && t < w.open) t = w.open;
@@ -851,28 +1001,36 @@ function bestOrder(dur, startSec){
     return { lc: lab.lc + (over > 0 ? 1 : 0), late: lab.late + over, t: leave, tr: lab.tr + d, k, prev: lab };
   }
   const root = { lc:0, late:0, t:startSec, tr:0, k:-1, prev:null };
-  for (let k = 0; k < n; k++) add((1 << k) * n + k, step(root, 0, k));
+  for (let k = 0; k < n; k++) if (canVisit(0, k)) add((1 << k) * n + k, step(root, 0, k));
   for (let mask = 1; mask <= FULL; mask++){
     for (let last = 0; last < n; last++){
       const list = table.get(mask * n + last); if (!list) continue;
       for (let k = 0; k < n; k++){
-        if (mask & (1 << k)) continue;
+        if (mask >> k & 1 || !canVisit(mask, k)) continue;
         const key = (mask | (1 << k)) * n + k;
         for (const lab of list) add(key, step(lab, last + 1, k));
       }
     }
   }
+  const popcount = x => { let c = 0; while (x){ x &= x - 1; c++; } return c; };
   let best = null;
-  for (let last = 0; last < n; last++){
-    for (const lab of table.get(FULL * n + last) || []){
-      const d = roundTrip() ? dur[last + 1][0] : 0;
-      const fin = { lateCount: lab.lc, late: lab.late, back: lab.t + d, travel: lab.tr + d, lab };
-      if (!best || better(fin, best)) best = fin;
-    }
+  function consider(mask, lab, from){
+    if ((mask & reqMask) !== reqMask) return;
+    const d = endNode == null ? 0 : (mask === 0 && endNode === 0 ? 0 : dur[from][endNode]);
+    const fin = lab.t + d;
+    const over = dl != null && fin > dl ? fin - dl : 0;
+    const c = { lc: lab.lc + (over > 0 ? 1 : 0), opt: popcount(mask & ~reqMask), late: lab.late + over, fin, tr: lab.tr + d, lab };
+    if (!best || c.lc < best.lc || (c.lc === best.lc && (c.late < best.late - 1 || (Math.abs(c.late - best.late) <= 1 &&
+        (c.opt > best.opt || (c.opt === best.opt && (c.fin < best.fin - 1 || (Math.abs(c.fin - best.fin) <= 1 && c.tr < best.tr)))))))) best = c;
   }
+  consider(0, root, 0);
+  for (let mask = 1; mask <= FULL; mask++)
+    for (let last = 0; last < n; last++)
+      for (const lab of table.get(mask * n + last) || []) consider(mask, lab, last + 1);
+  if (!best) return null;
   const perm = [];
   for (let l = best.lab; l && l.k >= 0; l = l.prev) perm.unshift(l.k + 1);
-  return { perm, sim: simulate(perm.map(k => stops[k - 1]), legsOf(dur, perm), startSec) };
+  return { perm, endNode, score: best };
 }
 
 let matrixCache = { key:"", M:null }, routeCache = { key:"", legs:null, line:null }, calcSeq = 0;
@@ -881,22 +1039,27 @@ async function calculate(auto){
   if (!auto) showMsg("");
   if (!state.home){ showMsg("先に家の場所を決めてください。"); return; }
   if (!state.stops.length){ showMsg("行き先を1ヶ所以上追加してください。"); return; }
+  if (state.endMode === "point" && !state.endPoint){ showMsg("終点を決めてください。「地図で終点を選ぶ」か、検索結果や地図のポップアップの「終点にする」を使います。"); return; }
   const seq = ++calcSeq, mode = state.mode, end = state.endMode;
   const btn = $("calc"); btn.disabled = true; btn.textContent = "計算中…";
   try {
-    const pts = [state.home, ...state.stops];
+    const pts = [state.home, ...state.stops, ...(end === "point" ? [state.endPoint] : [])];
     const mkey = mode + "|" + coordStr(pts);
     const M = matrixCache.key === mkey ? matrixCache.M : await buildMatrix(pts);
     if (!M.approx) matrixCache = { key:mkey, M };
     if (seq !== calcSeq || mode !== state.mode || end !== state.endMode) return;
 
-    const startSec = departMin() * 60;
-    const best = bestOrder(M.dur, startSec);
-    const picked = simulate(state.stops, legsOf(M.dur, state.stops.map((_, i) => i + 1)), startSec);
-    const order = [0, ...best.perm, ...(end === "home" ? [0] : [])];
+    const plan = solve(M.dur, departMin() * 60);
+    if (!plan){
+      if (state.route) invalidate();
+      showMsg("条件をすべて満たす回り方がありません。「最初に／最後に」の指定と前後の条件が食い違っていないか確かめてください（たとえば「最後に」の場所より後に回る条件があるなど）。");
+      return;
+    }
+    const order = [0, ...plan.perm, ...(plan.endNode != null && !(plan.perm.length === 0 && plan.endNode === 0) ? [plan.endNode] : [])];
     const rkey = mode + "|" + coordStr(order.map(i => pts[i]));
     let legs = null, line = null;
-    if (!M.approx){
+    if (order.length < 2) legs = [];
+    else if (!M.approx){
       if (routeCache.key === rkey){ legs = routeCache.legs; line = routeCache.line; }
       else {
         try {
@@ -910,7 +1073,7 @@ async function calculate(auto){
     }
     if (seq !== calcSeq || mode !== state.mode || end !== state.endMode) return;
     if (!legs) legs = order.slice(1).map((j, k) => ({ dur:M.dur[order[k]][j], dist:M.dist[order[k]][j] }));
-    state.route = { order: best.perm.map(k => k - 1), legs, line, approx:M.approx, mode, end, best:best.sim, picked };
+    state.route = { order: plan.perm.map(k => k - 1), legs, line, approx:M.approx, mode, end, endPoint: state.endPoint };
     renderRoute(!auto); renderPins();
     showMsg(M.approx ? "経路サーバーにつながらなかったため、直線距離からの概算で順番を決めました（地図の線は直線です）。" : "");
   } catch(e){
@@ -934,17 +1097,21 @@ function renderRoute(moveView){
   const stops = R.order.map(i => state.stops[i]);
   const sim = simulate(stops, R.legs.map(l => l.dur), departMin() * 60);
   const distM = R.legs.reduce((a, l) => a + l.dist, 0);
+  const dl = deadlineSec(), over = dl != null && sim.back > dl ? sim.back - dl : 0;
+  const skipped = state.stops.filter((s, i) => !R.order.includes(i));
+  const endLabel = R.end === "home" ? "帰宅" : R.end === "point" ? "終点に到着" : "回り終わり";
 
   $("modeLabel").textContent = MODES[R.mode].label + (R.approx ? "・概算" : "");
   $("sum").innerHTML = `
     <div><span class="k">移動時間</span><b>${fmtDur(sim.travel)}</b></div>
     <div><span class="k">距離</span><b>${fmtDist(distM)}</b></div>
-    <div><span class="k">${R.end === "open" ? "回り終わり" : "帰宅"}</span><b>${clockSec(sim.back)}</b></div>`;
+    <div><span class="k">${endLabel}</span><b>${clockSec(sim.back)}</b></div>`;
 
   const notes = [];
-  if (sim.lateCount) notes.push(["bad", `どの順番でも、営業時間内に用事を済ませられない所が${sim.lateCount}ヶ所あります（赤字）。出発を早めるか、行き先を減らしてください。`]);
-  else if (stops.length >= 2 && R.picked.lateCount) notes.push(["good", "追加した順だと閉店に間に合わない所がありますが、この順番なら全部間に合います。"]);
-  else if (stops.length >= 2 && R.picked.back - R.best.back >= 60) notes.push(["good", `追加した順に回るより ${fmtDur(R.picked.back - R.best.back)} ${R.end === "open" ? "早く回り終わります" : "早く家に着きます"}。`]);
+  if (sim.lateCount) notes.push(["bad", `営業時間内に用事を済ませられない所が${sim.lateCount}ヶ所あります（赤字）。出発を早めるか、その場所の「必ず行く」を外すと、間に合わない所を飛ばす回り方を探せます。`]);
+  if (over > 0) notes.push(["bad", `締め切り（${$("deadline").value}）に ${fmtDur(over)} 間に合いません。行き先を減らすか、「必ず行く」を外してください。`]);
+  if (skipped.length) notes.push(["info", `今回は回らない所（行けたら）：${skipped.map(s => s.name).join("、")}。時間や条件の都合で外しました。`]);
+  else if (state.stops.some(s => s.req === false) && !sim.lateCount && !over) notes.push(["good", "「行けたら」の場所も全部回れます。"]);
   if (sim.wait >= 60) notes.push(["info", `開店待ちが合計 ${fmtDur(sim.wait)} あります。`]);
   $("notes").innerHTML = notes.map(([c, t]) => `<p class="note ${c}">${esc(t)}</p>`).join("");
 
@@ -954,23 +1121,31 @@ function renderRoute(moveView){
     if (k < stops.length){
       const s = stops[k], v = sim.visits[k], stay = Math.round(stayOf(s) / 60);
       const sub = [];
+      if (s.pos === "first") sub.push("最初に行く");
+      if (s.pos === "last") sub.push("最後に行く");
+      if (s.req === false) sub.push("行けたら");
       if (v.w) sub.push(`営業 ${fmtWindow(s)}`);
       if (v.waited >= 60) sub.push(`開店まで${fmtDur(v.waited)}待ち`);
       sub.push(stay ? `${stay}分いて ${clockSec(v.leave)} に出る` : "立ち寄るだけ");
       const late = v.over > 0 ? `<span class="late">${v.leave - stayOf(s) >= v.w.close ? "着いた時には閉店しています" : `閉店に${fmtDur(v.over)}間に合いません`}</span>` : "";
       html += `<li class="${v.over > 0 ? "is-late" : ""}"><span class="t">${clockSec(v.arrive)}</span><span class="m"><i>${k+1}</i></span><span class="n"><b>${esc(s.name)}</b><span>${esc(sub.join("・"))}</span>${late}</span></li>`;
+    } else if (R.end === "point"){
+      html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h e">終</i></span><span class="n"><b>${esc(R.endPoint.name)}</b><span>終点</span></span></li>`;
     } else {
       html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">${HOUSE}</i></span><span class="n"><b>家に到着</b></span></li>`;
     }
   });
-  if (R.end === "open") html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">✓</i></span><span class="n"><b>回り終わり</b><span>家には戻りません</span></span></li>`;
+  if (R.end === "open" && stops.length) html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">✓</i></span><span class="n"><b>回り終わり</b><span>家には戻りません</span></span></li>`;
+  if (R.end === "home" && !R.legs.length) html += `<li><span class="t"></span><span class="m"></span><span class="n"><span>回れる場所がありませんでした。</span></span></li>`;
+  if (over > 0) html += `<li class="is-late"><span class="t"></span><span class="m"></span><span class="n"><span class="late">締め切り ${esc($("deadline").value)} を ${fmtDur(over)} 過ぎます</span></span></li>`;
   $("timeline").innerHTML = html;
 
   // Google マップに渡せる経由地はスマホのブラウザで3つ、それ以外で9つまで。超える分はリンクを分ける
   const ll = p => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
-  const seqPts = [state.home, ...stops, ...(R.end === "open" ? [] : [state.home])];
+  const tail = R.end === "home" ? (stops.length ? [state.home] : []) : R.end === "point" ? [R.endPoint] : [];
+  const seqPts = [state.home, ...stops, ...tail];
   const maxWp = matchMedia("(pointer:coarse)").matches ? 3 : 9;
-  const name = i => (i === 0 || (i === seqPts.length - 1 && R.end !== "open")) ? "家" : `${i}`;
+  const name = i => i === 0 ? "家" : (i === seqPts.length - 1 && R.end === "home") ? "家" : (i === seqPts.length - 1 && R.end === "point") ? "終点" : `${i}`;
   const links = [];
   for (let a = 0; a < seqPts.length - 1; ){
     const b = Math.min(a + maxWp + 1, seqPts.length - 1);
@@ -985,6 +1160,7 @@ function renderRoute(moveView){
   $("resultSec").hidden = false;
 
   routeLayer.clearLayers();
+  if (seqPts.length < 2) return;
   const accent = cssVar("--accent"), casing = cssVar("--surface");
   const path = R.line || seqPts.map(p => [p.lat, p.lng]);
   L.polyline(path, { color:casing, weight:9, opacity:.9, interactive:false }).addTo(routeLayer);
@@ -994,7 +1170,7 @@ function renderRoute(moveView){
   if (matchMedia("(max-width:800px)").matches) { const pn = document.querySelector(".panel"); pn.scrollTo({ top: pn.scrollTop + $("resultSec").getBoundingClientRect().top - pn.getBoundingClientRect().top - 12, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" }); }
 }
 
-/* ---------- 共有リンク ----------
+/* ---------- 共有リンク・ページの行き来 ----------
    家・行き先・条件を JSON にして URL の # 以降に入れる（# 以降はサーバーに送られない） */
 function b64urlEncode(str){
   let bin = ""; new TextEncoder().encode(str).forEach(b => { bin += String.fromCharCode(b); });
@@ -1005,21 +1181,18 @@ function b64urlDecode(str){
   return new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
 }
 const r5 = n => Math.round(n * 1e5) / 1e5;
-const isHHMM = v => typeof v === "string" && /^\d{2}:\d{2}$/.test(v);
+function isHHMM(v){ return typeof v === "string" && /^\d{2}:\d{2}$/.test(v); }
 function shareData(){
-  return { v:1, m:state.mode, e:state.endMode, d:$("depart").value, st:stayMin(),
+  return { v:2, m:state.mode, e:state.endMode, d:$("depart").value, st:stayMin(), dl:$("deadline").value,
     h: state.home ? [r5(state.home.lat), r5(state.home.lng)] : null,
-    s: state.stops.map(s => [s.name, r5(s.lat), r5(s.lng), s.open || "", s.close || "", Number.isFinite(s.stay) ? s.stay : null, s.address || ""]) };
+    ep: state.endPoint ? [r5(state.endPoint.lat), r5(state.endPoint.lng), state.endPoint.name] : null,
+    s: state.stops.map(s => [s.name, r5(s.lat), r5(s.lng), s.open || "", s.close || "", Number.isFinite(s.stay) ? s.stay : null, s.address || "", s.req === false ? 0 : 1, s.pos || ""]),
+    pr: precIdx() };
 }
-const makeShareUrl = () => location.href.split("#")[0] + "#r=" + b64urlEncode(JSON.stringify(shareData()));
-// 詳細条件版へ移るときは、今の家と行き先を持っていく
-$("toAdvanced").addEventListener("click", e => {
-  if (!state.home && !state.stops.length) return;
-  e.currentTarget.href = "advanced/#r=" + b64urlEncode(JSON.stringify(shareData()));
-});
+const shareHash = () => "#r=" + b64urlEncode(JSON.stringify(shareData()));
 function shareNote(t){ $("shareMsg").textContent = t; $("shareMsg").hidden = false; }
 $("share").addEventListener("click", async () => {
-  const url = makeShareUrl();
+  const url = location.href.split("#")[0] + shareHash();
   $("shareUrl").hidden = true;
   if (navigator.share && matchMedia("(pointer:coarse)").matches){
     try { await navigator.share({ title: document.title, url }); return; }
@@ -1033,26 +1206,44 @@ $("share").addEventListener("click", async () => {
     shareNote("下のリンクをコピーしてください。リンクには家と行き先の位置が含まれます。");
   }
 });
-function importShared(){ // 共有リンクで開かれたら、その内容を読み込む
+// シンプル版へ移るときは、今の家と行き先を持っていく（細かい条件は外れる）
+$("toSimple").addEventListener("click", e => {
+  if (!state.home && !state.stops.length) return;
+  const d = shareData(); d.v = 1; d.e = state.endMode === "open" ? "open" : "home";
+  e.currentTarget.href = "../#r=" + b64urlEncode(JSON.stringify(d));
+});
+function importShared(){ // 共有リンク（またはシンプル版から移ってきたとき）の内容を読み込む
   const m = /^#r=([A-Za-z0-9_-]+)$/.exec(location.hash); if (!m) return false;
   let d; try { d = JSON.parse(b64urlDecode(m[1])); } catch(e){ return false; }
-  if (!d || (d.v !== 1 && d.v !== 2)) return false; // 2 は詳細条件版から（細かい条件は読み飛ばす）
+  if (!d || (d.v !== 1 && d.v !== 2)) return false;
   if (MODES[d.m]) state.mode = d.m;
-  state.endMode = d.e === "open" ? "open" : "home";
+  state.endMode = ["home", "open", "point"].includes(d.e) ? d.e : "home";
   if (Array.isArray(d.h) && isFinite(d.h[0]) && isFinite(d.h[1])){
     state.home = { name:"家", sub:"共有リンクの出発地", lat:+d.h[0], lng:+d.h[1] };
     if (!store.get(KEY_HOME)) store.set(KEY_HOME, state.home);
   }
+  if (Array.isArray(d.ep) && isFinite(d.ep[0]) && isFinite(d.ep[1])){
+    state.endPoint = { name: String(d.ep[2] || "終点").slice(0, 80), sub:"共有リンクの終点", lat:+d.ep[0], lng:+d.ep[1] };
+    store.set(KEY_ENDPT, state.endPoint);
+  }
+  if (state.endMode === "point" && !state.endPoint) state.endMode = "home";
   state.stops = (Array.isArray(d.s) ? d.s : []).slice(0, MAX_STOPS).map(a => ({
     name: String(a[0] || "地点").slice(0, 80), lat:+a[1], lng:+a[2],
     open: isHHMM(a[3]) ? a[3] : "", close: isHHMM(a[4]) ? a[4] : "",
     stay: Number.isFinite(a[5]) ? Math.max(0, Math.min(240, a[5])) : null,
-    address: String(a[6] || "").slice(0, 120), src:"", hoursNote:"" })).filter(okPt);
+    address: String(a[6] || "").slice(0, 120), src:"", hoursNote:"",
+    req: a[7] !== 0, pos: a[8] === "first" || a[8] === "last" ? a[8] : "" })).filter(okPt);
+  state.prec = [];
+  if (Array.isArray(d.pr)) for (const p of d.pr){
+    const a = state.stops[p && p[0]], b = state.stops[p && p[1]];
+    if (a && b && a !== b) state.prec.push([keyOf(a), keyOf(b)]);
+  }
   if (isHHMM(d.d)) $("depart").value = d.d;
   if (Number.isFinite(d.st)) $("stay").value = d.st;
+  $("deadline").value = isHHMM(d.dl) ? d.dl : "";
   document.querySelectorAll('input[name="mode"]').forEach(r => { r.checked = r.value === state.mode; });
   document.querySelectorAll('input[name="end"]').forEach(r => { r.checked = r.value === state.endMode; });
-  store.set(KEY_MODE, state.mode); store.set(KEY_END, state.endMode); saveStops();
+  store.set(KEY_MODE, state.mode); store.set(KEY_END, state.endMode); saveStops(); savePrec(); store.set(KEY_DL, $("deadline").value);
   history.replaceState(null, "", location.pathname + location.search);
   return true;
 }
@@ -1067,7 +1258,7 @@ function importShared(){ // 共有リンクで開かれたら、その内容を�
 
 /* ---------- 起動 ---------- */
 const fromShare = importShared();
-renderHome(); renderStops(); renderPins();
+renderHome(); renderStops(); renderEnd(); renderPins();
 if (state.stops.length){
   const pts = [...state.stops, ...(state.home ? [state.home] : [])].map(p => [p.lat, p.lng]);
   map.fitBounds(pts, { padding:[50,50], maxZoom:16 });
