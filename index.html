@@ -301,7 +301,7 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 const API = "https://api.openpoiapi.com";
 const MAX_STOPS = 10;
 const MODES = {
-  car:  { label:"車",     bases:["https://routing.openstreetmap.de/routed-car", "https://router.project-osrm.org"], gm:"driving",   kmh:22 },
+  car:  { label:"車",     bases:["https://router.project-osrm.org", "https://routing.openstreetmap.de/routed-car"], gm:"driving",   kmh:22 },
   bike: { label:"自転車", bases:["https://routing.openstreetmap.de/routed-bike"], gm:"bicycling", kmh:12 },
   foot: { label:"徒歩",   bases:["https://routing.openstreetmap.de/routed-foot"], gm:"walking",   kmh:4.5 },
 };
