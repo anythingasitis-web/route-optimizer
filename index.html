@@ -162,6 +162,14 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 .about summary{cursor:pointer;font-weight:700;color:var(--ink);font-size:13px}
 .about ul{margin:8px 0 0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;line-height:1.7}
 .foot{color:var(--muted);font-size:11px;line-height:1.7}
+.order-strip{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;font-size:13px}
+.order-strip .oc{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0}
+.order-strip .oc + .oc::before{content:"→";color:var(--muted);margin-right:2px}
+.order-strip .oc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.order-strip .oc i{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700}
+.order-strip .oc.home span,.order-strip .oc.end span{color:var(--muted)}
+.leaflet-tooltip.pin-label{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 4px var(--shadow);font:600 12px/1.4 var(--font);padding:2px 7px;white-space:nowrap}
+.leaflet-tooltip.pin-label::before{display:none}
 .switch{display:inline-block;margin-top:8px;font-size:12px;color:var(--accent);text-decoration:none;font-weight:600}
 .switch:hover{text-decoration:underline}
 .share-url{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:12px}
@@ -257,6 +265,7 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 
     <section id="resultSec" class="sec" aria-labelledby="h-res" hidden>
       <div class="sec-h"><h2 id="h-res">回る順番</h2><span id="modeLabel" class="count"></span></div>
+      <ol id="orderStrip" class="order-strip" aria-label="回る順番"></ol>
       <div id="sum" class="sum"></div>
       <div id="notes" class="notes"></div>
       <ol id="timeline" class="tl"></ol>
@@ -346,6 +355,7 @@ const state = {
 /* ---------- 小道具 ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const shortName = (n, max = 12) => { n = String(n || ""); return n.length > max ? n.slice(0, max) + "…" : n; };
 const keyOf = p => `${p.name}@${(+p.lat).toFixed(5)},${(+p.lng).toFixed(5)}`;
 function haversine(a, b){
   const R = 6371000, r = Math.PI/180;
@@ -511,6 +521,7 @@ function renderPins(){
   state.stops.forEach((s, i) => {
     const visit = order ? order.indexOf(i) + 1 : 0;
     const m = L.marker([s.lat, s.lng], { icon: icon(visit || i+1, visit ? "done" : ""), zIndexOffset: 500 });
+    if (visit) m.bindTooltip(`${visit}. ${esc(shortName(s.name))}`, { permanent:true, direction:"right", offset:[14, 0], className:"pin-label" }); // 計算後は名前も出す
     m.bindPopup(() => popupEl(s.name, s.address, [{ label:"行き先から外す", run: () => removeStop(state.stops.indexOf(s)) }]));
     pinLayer.addLayer(m);
   });
@@ -941,6 +952,10 @@ function renderRoute(moveView){
     <div><span class="k">距離</span><b>${fmtDist(distM)}</b></div>
     <div><span class="k">${R.end === "open" ? "回り終わり" : "帰宅"}</span><b>${clockSec(sim.back)}</b></div>`;
 
+  $("orderStrip").innerHTML = `<li class="oc home"><span>家</span></li>`
+    + stops.map((s, k) => `<li class="oc"><i>${k+1}</i><span>${esc(shortName(s.name, 14))}</span></li>`).join("")
+    + (R.end === "open" ? `<li class="oc end"><span>おわり</span></li>` : `<li class="oc home"><span>家</span></li>`);
+
   const notes = [];
   if (sim.lateCount) notes.push(["bad", `どの順番でも、営業時間内に用事を済ませられない所が${sim.lateCount}ヶ所あります（赤字）。出発を早めるか、行き先を減らしてください。`]);
   else if (stops.length >= 2 && R.picked.lateCount) notes.push(["good", "追加した順だと閉店に間に合わない所がありますが、この順番なら全部間に合います。"]);
@@ -990,7 +1005,8 @@ function renderRoute(moveView){
   L.polyline(path, { color:casing, weight:9, opacity:.9, interactive:false }).addTo(routeLayer);
   L.polyline(path, { color:accent, weight:5, opacity:.95, dashArray: R.line ? null : "8 8", interactive:false }).addTo(routeLayer);
   if (!moveView) return;
-  map.fitBounds(L.latLngBounds(path), { padding:[40,40] });
+  const padR = matchMedia("(max-width:800px)").matches ? 130 : 170; // 右側にピンの名前が出るぶん余白を広めに
+  map.fitBounds(L.latLngBounds(path), { paddingTopLeft:[40, 40], paddingBottomRight:[padR, 40] });
   if (matchMedia("(max-width:800px)").matches) { const pn = document.querySelector(".panel"); pn.scrollTo({ top: pn.scrollTop + $("resultSec").getBoundingClientRect().top - pn.getBoundingClientRect().top - 12, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" }); }
 }
 
