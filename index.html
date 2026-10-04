@@ -118,6 +118,7 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 /* 条件 */
 .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .seg{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--bg)}
+.seg2{grid-template-columns:repeat(2,1fr)}
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label{text-align:center;padding:7px 0;border-radius:7px;cursor:pointer;font-size:13px}
 .seg input:checked+label{background:var(--surface);box-shadow:0 1px 3px var(--shadow);font-weight:700}
@@ -161,6 +162,7 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
 .about summary{cursor:pointer;font-weight:700;color:var(--ink);font-size:13px}
 .about ul{margin:8px 0 0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;line-height:1.7}
 .foot{color:var(--muted);font-size:11px;line-height:1.7}
+.share-url{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:12px}
 .foot a{color:inherit}
 
 /* 地図上の部品 */
@@ -239,6 +241,10 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
           <input type="radio" name="mode" id="m-bike" value="bike"><label for="m-bike">自転車</label>
           <input type="radio" name="mode" id="m-foot" value="foot"><label for="m-foot">徒歩</label>
         </div>
+        <div class="seg seg2" role="radiogroup" aria-label="最後に家へ戻るか">
+          <input type="radio" name="end" id="e-home" value="home" checked><label for="e-home">最後に家へ戻る</label>
+          <input type="radio" name="end" id="e-open" value="open"><label for="e-open">戻らない（片道）</label>
+        </div>
         <label class="field" for="depart">出発時刻<input id="depart" type="time"></label>
         <label class="field" for="stay">滞在（標準・分）<input id="stay" type="number" min="0" max="240" step="5" value="15" inputmode="numeric"></label>
       </div>
@@ -253,8 +259,11 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
       <ol id="timeline" class="tl"></ol>
       <div class="row">
         <span id="gmaps" class="row"></span>
+        <button id="share" class="btn" type="button">共有リンク</button>
         <button id="clearRoute" class="btn" type="button">ルートを消す</button>
       </div>
+      <p id="shareMsg" class="hint" role="status" hidden></p>
+      <input id="shareUrl" class="share-url" type="text" readonly hidden aria-label="共有リンク">
       <p class="hint">時間は道路データからの目安で、信号待ちや渋滞は含みません。</p>
     </section>
 
@@ -262,6 +271,9 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
       <span class="ad-label">広告</span>
       <div class="ad-body">
         <!-- ▼ 広告サービスから渡されたコードを、この2行の間に貼り付けてください ▼ -->
+        <!-- admax -->
+        <script src="https://adm.shinobi.jp/s/da792303c178bf341362a6020aac919f"></script>
+        <!-- admax -->
         <!-- ▲ ここまで ▲ -->
       </div>
       <p class="ad-placeholder">広告枠（ここに広告コードを貼ると表示されます。公開ページでは、コードが無ければこの枠は出ません）</p>
@@ -276,7 +288,10 @@ a.btn{display:inline-block;text-decoration:none;color:var(--ink)}
         <li>施設は公開データから探しているため、載っていない場所や閉店したお店が出ることがあります。見つからない場所は、地図をクリックすれば追加できます。</li>
         <li>Googleマップのナビは、一度に渡せる経由地の数に上限があります（スマホのブラウザは3ヶ所、それ以外は9ヶ所）。超えるときはナビのリンクを分けて表示します。</li>
         <li>地図・検索・経路は、無料で公開されているサービスを使っています。混み合っていると遅くなったり、つながらないことがあります。</li>
+        <li>「戻らない（片道）」にすると、家から出発して最後の行き先で終わる回り方を出します。どこで終わるのが一番早いかも自動で決めます。</li>
+        <li>「共有リンク」で、行き先・営業時間・順番の条件をリンクにして送れます。リンクには家と行き先の位置が含まれるので、送る相手に気をつけてください。</li>
         <li>家と行き先は、この端末のブラウザの中にだけ保存されます。検索した言葉と地点の位置は、検索や経路計算のために各サービスへ送られます。</li>
+        <li>このページには広告（忍者AdMax）が表示されます。広告の配信のため、広告事業者がCookieを使うことがあります。</li>
       </ul>
     </details>
 
@@ -309,7 +324,7 @@ const MODES = {
 
 /* ---------- 保存（このブラウザだけ） ---------- */
 const today = new Date().toLocaleDateString("sv-SE");
-const KEY_HOME = "otsukai.home", KEY_STOPS = "otsukai.stops." + today, KEY_MODE = "otsukai.mode", KEY_STAY = "otsukai.stay";
+const KEY_HOME = "otsukai.home", KEY_STOPS = "otsukai.stops." + today, KEY_MODE = "otsukai.mode", KEY_STAY = "otsukai.stay", KEY_END = "otsukai.end";
 const store = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
@@ -319,6 +334,7 @@ const state = {
   home: store.get(KEY_HOME),
   stops: Array.isArray(store.get(KEY_STOPS)) ? store.get(KEY_STOPS).slice(0, MAX_STOPS) : [],
   mode: MODES[store.get(KEY_MODE)] ? store.get(KEY_MODE) : "car",
+  endMode: store.get(KEY_END) === "open" ? "open" : "home",
   results: [],
   picking: false,
   route: null,
@@ -693,6 +709,11 @@ document.querySelectorAll('input[name="mode"]').forEach(r => {
   r.checked = r.value === state.mode;
   r.addEventListener("change", () => { state.mode = r.value; store.set(KEY_MODE, state.mode); invalidate(); });
 });
+document.querySelectorAll('input[name="end"]').forEach(r => {
+  r.checked = r.value === state.endMode;
+  r.addEventListener("change", () => { state.endMode = r.value; store.set(KEY_END, state.endMode); recalcSoon(); });
+});
+const roundTrip = () => state.endMode !== "open";
 (() => {
   const n = new Date(); const m = Math.ceil((n.getHours()*60 + n.getMinutes()) / 5) * 5;
   $("depart").value = `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
@@ -749,7 +770,7 @@ function simulate(stops, legDur, startSec){
     t = leave;
     return { arrive, waited, leave, over, w };
   });
-  t += legDur[stops.length]; travel += legDur[stops.length];
+  if (legDur.length > stops.length){ t += legDur[stops.length]; travel += legDur[stops.length]; } // 家へ戻る区間（片道なら無し）
   return { back:t, travel, wait, lateCount, late, visits };
 }
 // 良さの比べ方: ①営業時間に間に合わない所が少ない ②遅れが短い ③家に早く着く ④移動時間が短い
@@ -801,7 +822,7 @@ async function buildMatrix(pts){
   }
   return { dur, dist, approx };
 }
-const legsOf = (dur, perm) => { const seq = [0, ...perm, 0]; return seq.slice(1).map((j, k) => dur[seq[k]][j]); };
+const legsOf = (dur, perm) => { const seq = [0, ...perm, ...(roundTrip() ? [0] : [])]; return seq.slice(1).map((j, k) => dur[seq[k]][j]); };
 /* 時間枠付き巡回セールスマン問題を、動的計画法（Held-Karp 法を営業時間に合わせて広げたもの）で厳密に解く。
    状態 =（回り終えた行き先の集合, 最後にいる行き先）。状態ごとに「間に合わない数・遅れ・時刻・移動時間」の
    どれでも他に負けている候補を捨て、残った候補（パレート最適な候補）だけを持つ。
@@ -841,7 +862,7 @@ function bestOrder(dur, startSec){
   let best = null;
   for (let last = 0; last < n; last++){
     for (const lab of table.get(FULL * n + last) || []){
-      const d = dur[last + 1][0];
+      const d = roundTrip() ? dur[last + 1][0] : 0;
       const fin = { lateCount: lab.lc, late: lab.late, back: lab.t + d, travel: lab.tr + d, lab };
       if (!best || better(fin, best)) best = fin;
     }
@@ -857,19 +878,19 @@ async function calculate(auto){
   if (!auto) showMsg("");
   if (!state.home){ showMsg("先に家の場所を決めてください。"); return; }
   if (!state.stops.length){ showMsg("行き先を1ヶ所以上追加してください。"); return; }
-  const seq = ++calcSeq, mode = state.mode;
+  const seq = ++calcSeq, mode = state.mode, end = state.endMode;
   const btn = $("calc"); btn.disabled = true; btn.textContent = "計算中…";
   try {
     const pts = [state.home, ...state.stops];
     const mkey = mode + "|" + coordStr(pts);
     const M = matrixCache.key === mkey ? matrixCache.M : await buildMatrix(pts);
     if (!M.approx) matrixCache = { key:mkey, M };
-    if (seq !== calcSeq || mode !== state.mode) return;
+    if (seq !== calcSeq || mode !== state.mode || end !== state.endMode) return;
 
     const startSec = departMin() * 60;
     const best = bestOrder(M.dur, startSec);
     const picked = simulate(state.stops, legsOf(M.dur, state.stops.map((_, i) => i + 1)), startSec);
-    const order = [0, ...best.perm, 0];
+    const order = [0, ...best.perm, ...(end === "home" ? [0] : [])];
     const rkey = mode + "|" + coordStr(order.map(i => pts[i]));
     let legs = null, line = null;
     if (!M.approx){
@@ -884,9 +905,9 @@ async function calculate(auto){
         } catch(e){ /* 下で表から作る */ }
       }
     }
-    if (seq !== calcSeq || mode !== state.mode) return;
+    if (seq !== calcSeq || mode !== state.mode || end !== state.endMode) return;
     if (!legs) legs = order.slice(1).map((j, k) => ({ dur:M.dur[order[k]][j], dist:M.dist[order[k]][j] }));
-    state.route = { order: best.perm.map(k => k - 1), legs, line, approx:M.approx, mode, best:best.sim, picked };
+    state.route = { order: best.perm.map(k => k - 1), legs, line, approx:M.approx, mode, end, best:best.sim, picked };
     renderRoute(!auto); renderPins();
     showMsg(M.approx ? "経路サーバーにつながらなかったため、直線距離からの概算で順番を決めました（地図の線は直線です）。" : "");
   } catch(e){
@@ -915,12 +936,12 @@ function renderRoute(moveView){
   $("sum").innerHTML = `
     <div><span class="k">移動時間</span><b>${fmtDur(sim.travel)}</b></div>
     <div><span class="k">距離</span><b>${fmtDist(distM)}</b></div>
-    <div><span class="k">帰宅</span><b>${clockSec(sim.back)}</b></div>`;
+    <div><span class="k">${R.end === "open" ? "回り終わり" : "帰宅"}</span><b>${clockSec(sim.back)}</b></div>`;
 
   const notes = [];
   if (sim.lateCount) notes.push(["bad", `どの順番でも、営業時間内に用事を済ませられない所が${sim.lateCount}ヶ所あります（赤字）。出発を早めるか、行き先を減らしてください。`]);
   else if (stops.length >= 2 && R.picked.lateCount) notes.push(["good", "追加した順だと閉店に間に合わない所がありますが、この順番なら全部間に合います。"]);
-  else if (stops.length >= 2 && R.picked.back - R.best.back >= 60) notes.push(["good", `追加した順に回るより ${fmtDur(R.picked.back - R.best.back)} 早く家に着きます。`]);
+  else if (stops.length >= 2 && R.picked.back - R.best.back >= 60) notes.push(["good", `追加した順に回るより ${fmtDur(R.picked.back - R.best.back)} ${R.end === "open" ? "早く回り終わります" : "早く家に着きます"}。`]);
   if (sim.wait >= 60) notes.push(["info", `開店待ちが合計 ${fmtDur(sim.wait)} あります。`]);
   $("notes").innerHTML = notes.map(([c, t]) => `<p class="note ${c}">${esc(t)}</p>`).join("");
 
@@ -939,13 +960,14 @@ function renderRoute(moveView){
       html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">${HOUSE}</i></span><span class="n"><b>家に到着</b></span></li>`;
     }
   });
+  if (R.end === "open") html += `<li><span class="t">${clockSec(sim.back)}</span><span class="m"><i class="h">✓</i></span><span class="n"><b>回り終わり</b><span>家には戻りません</span></span></li>`;
   $("timeline").innerHTML = html;
 
   // Google マップに渡せる経由地はスマホのブラウザで3つ、それ以外で9つまで。超える分はリンクを分ける
   const ll = p => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
-  const seqPts = [state.home, ...stops, state.home];
+  const seqPts = [state.home, ...stops, ...(R.end === "open" ? [] : [state.home])];
   const maxWp = matchMedia("(pointer:coarse)").matches ? 3 : 9;
-  const name = i => (i === 0 || i === seqPts.length - 1) ? "家" : `${i}`;
+  const name = i => (i === 0 || (i === seqPts.length - 1 && R.end !== "open")) ? "家" : `${i}`;
   const links = [];
   for (let a = 0; a < seqPts.length - 1; ){
     const b = Math.min(a + maxWp + 1, seqPts.length - 1);
@@ -961,12 +983,70 @@ function renderRoute(moveView){
 
   routeLayer.clearLayers();
   const accent = cssVar("--accent"), casing = cssVar("--surface");
-  const path = R.line || [state.home, ...stops, state.home].map(p => [p.lat, p.lng]);
+  const path = R.line || seqPts.map(p => [p.lat, p.lng]);
   L.polyline(path, { color:casing, weight:9, opacity:.9, interactive:false }).addTo(routeLayer);
   L.polyline(path, { color:accent, weight:5, opacity:.95, dashArray: R.line ? null : "8 8", interactive:false }).addTo(routeLayer);
   if (!moveView) return;
   map.fitBounds(L.latLngBounds(path), { padding:[40,40] });
   if (matchMedia("(max-width:800px)").matches) { const pn = document.querySelector(".panel"); pn.scrollTo({ top: pn.scrollTop + $("resultSec").getBoundingClientRect().top - pn.getBoundingClientRect().top - 12, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" }); }
+}
+
+/* ---------- 共有リンク ----------
+   家・行き先・条件を JSON にして URL の # 以降に入れる（# 以降はサーバーに送られない） */
+function b64urlEncode(str){
+  let bin = ""; new TextEncoder().encode(str).forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlDecode(str){
+  let b = str.replace(/-/g, "+").replace(/_/g, "/"); while (b.length % 4) b += "=";
+  return new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
+}
+const r5 = n => Math.round(n * 1e5) / 1e5;
+const isHHMM = v => typeof v === "string" && /^\d{2}:\d{2}$/.test(v);
+function makeShareUrl(){
+  const data = { v:1, m:state.mode, e:state.endMode, d:$("depart").value, st:stayMin(),
+    h: state.home ? [r5(state.home.lat), r5(state.home.lng)] : null,
+    s: state.stops.map(s => [s.name, r5(s.lat), r5(s.lng), s.open || "", s.close || "", Number.isFinite(s.stay) ? s.stay : null, s.address || ""]) };
+  return location.href.split("#")[0] + "#r=" + b64urlEncode(JSON.stringify(data));
+}
+function shareNote(t){ $("shareMsg").textContent = t; $("shareMsg").hidden = false; }
+$("share").addEventListener("click", async () => {
+  const url = makeShareUrl();
+  $("shareUrl").hidden = true;
+  if (navigator.share && matchMedia("(pointer:coarse)").matches){
+    try { await navigator.share({ title: document.title, url }); return; }
+    catch(e){ if (e && e.name === "AbortError") return; }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    shareNote("共有リンクをコピーしました。リンクには家と行き先の位置が含まれます。");
+  } catch(e){
+    const inp = $("shareUrl"); inp.value = url; inp.hidden = false; inp.focus(); inp.select();
+    shareNote("下のリンクをコピーしてください。リンクには家と行き先の位置が含まれます。");
+  }
+});
+function importShared(){ // 共有リンクで開かれたら、その内容を読み込む
+  const m = /^#r=([A-Za-z0-9_-]+)$/.exec(location.hash); if (!m) return false;
+  let d; try { d = JSON.parse(b64urlDecode(m[1])); } catch(e){ return false; }
+  if (!d || d.v !== 1) return false;
+  if (MODES[d.m]) state.mode = d.m;
+  state.endMode = d.e === "open" ? "open" : "home";
+  if (Array.isArray(d.h) && isFinite(d.h[0]) && isFinite(d.h[1])){
+    state.home = { name:"家", sub:"共有リンクの出発地", lat:+d.h[0], lng:+d.h[1] };
+    if (!store.get(KEY_HOME)) store.set(KEY_HOME, state.home);
+  }
+  state.stops = (Array.isArray(d.s) ? d.s : []).slice(0, MAX_STOPS).map(a => ({
+    name: String(a[0] || "地点").slice(0, 80), lat:+a[1], lng:+a[2],
+    open: isHHMM(a[3]) ? a[3] : "", close: isHHMM(a[4]) ? a[4] : "",
+    stay: Number.isFinite(a[5]) ? Math.max(0, Math.min(240, a[5])) : null,
+    address: String(a[6] || "").slice(0, 120), src:"", hoursNote:"" })).filter(okPt);
+  if (isHHMM(d.d)) $("depart").value = d.d;
+  if (Number.isFinite(d.st)) $("stay").value = d.st;
+  document.querySelectorAll('input[name="mode"]').forEach(r => { r.checked = r.value === state.mode; });
+  document.querySelectorAll('input[name="end"]').forEach(r => { r.checked = r.value === state.endMode; });
+  store.set(KEY_MODE, state.mode); store.set(KEY_END, state.endMode); saveStops();
+  history.replaceState(null, "", location.pathname + location.search);
+  return true;
 }
 
 /* ---------- 広告枠 ----------
@@ -978,11 +1058,13 @@ function renderRoute(moveView){
 })();
 
 /* ---------- 起動 ---------- */
+const fromShare = importShared();
 renderHome(); renderStops(); renderPins();
 if (state.stops.length){
   const pts = [...state.stops, ...(state.home ? [state.home] : [])].map(p => [p.lat, p.lng]);
   map.fitBounds(pts, { padding:[50,50], maxZoom:16 });
 }
+if (fromShare && state.home && state.stops.length) calculate(false);
 })();
 </script>
 </body>
