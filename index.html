@@ -1083,6 +1083,8 @@ function importShared(){ // 共有リンクで開かれたら、その内容を�
 
 /* ---------- 起動 ---------- */
 const fromShare = importShared();
+// 同じページを開いたまま共有リンクを開くと、# 以降だけが変わって再読み込みされないので、そのときは読み込み直す
+window.addEventListener("hashchange", () => { if (/^#r=/.test(location.hash)) location.reload(); });
 renderHome(); renderStops(); renderPins();
 if (state.stops.length){
   const pts = [...state.stops, ...(state.home ? [state.home] : [])].map(p => [p.lat, p.lng]);
